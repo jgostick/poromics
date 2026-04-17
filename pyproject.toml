@@ -1,0 +1,78 @@
+[tool.ruff]
+# Exclude a variety of commonly ignored directories.
+extend-exclude = [
+    ".direnv",
+    ".git",
+    ".ruff_cache",
+    "node_modules",
+    "migrations",
+]
+line-length = 120
+indent-width = 4
+target-version = "py312"
+
+[tool.ruff.lint]
+fixable = [
+    "ALL",
+]
+unfixable = []
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.setuptools]
+py-modules = []
+
+[project]
+name = "poromics"
+version = "0.1.0"
+description = "Network extraction as a service"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "Django>=6.0",
+    "boto3",
+    "celery",
+    "celery-progress",
+    "celery[redis]",
+    "channels",
+    "channels_redis",
+    "django-allauth[socialaccount,mfa]>=65.13.0",
+    "django-anymail[mailgun]", # email services
+    "django-celery-beat",
+    "django-environ",
+    "django-health-check",
+    "django-hijack",
+    "django-htmx",
+    "django-storages",
+    "django-vite>=3.1.0",
+    "django-waffle",
+    "djangorestframework",
+    "djangorestframework-api-key",
+    "drf-spectacular",
+    "psycopg",
+    "redis",
+    "sentry-sdk[django]>=2.55.0",
+    "whitenoise[brotli]",
+]
+
+[dependency-groups]
+dev = [
+    "channels[daphne]",
+    "django-browser-reload",
+    "django-debug-toolbar",
+    "django-watchfiles",
+    "pre-commit",
+    "ruff>=0.15.6",
+    "pegasus-cli>=0.12",
+    "psycopg[binary]",
+]
+prod = [
+    "gunicorn",
+    "psycopg[c]",
+    "uvicorn[standard]",
+]
