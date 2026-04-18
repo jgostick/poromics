@@ -14,6 +14,13 @@ BACKEND_QUEUE_MAP = {  # add near top of file, outside the view function
     'opengl': 'kabs-opengl',
 }
 
+JULIA_QUEUE_MAP = {
+    'cpu': 'julia-cpu',
+    'gpu': 'julia-gpu',
+    'metal': 'julia-metal',
+    'cuda': 'julia-cuda',
+}
+
 
 def _celery_queue_ready(queue_name: str, timeout: float = 1.5) -> tuple[bool, str]:
     """

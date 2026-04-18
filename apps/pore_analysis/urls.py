@@ -17,6 +17,7 @@ team_urlpatterns = (
         path('jobs/<uuid:job_id>/', views.job_detail, name='job_detail'),
         path('credits/', views.credit_dashboard, name='credit_dashboard'),
         path("analysis/permeability/", views.permeability_launch, name="permeability_launch"),
+        path("analysis/diffusivity/", views.diffusivity_launch, name="diffusivity_launch"),
         path("trim-image/", views.trim_image, name="trim_image"),
         path("trim-image/preview/", views.trim_image_preview, name="trim_image_preview"),
     ],

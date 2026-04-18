@@ -1,0 +1,38 @@
+{% load i18n %}
+
+<table class="table">
+  <thead>
+    <tr>
+      <th>{% translate "Type" %}</th>
+      <th>{% translate "Image" %}</th>
+      <th>{% translate "Status" %}</th>
+      <th>{% translate "Queue" %}</th>
+      <th>{% translate "Progress" %}</th>
+      <th>{% translate "Created" %}</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for job in jobs %}
+    <tr class="
+      {% if job.status == 'failed' %}bg-rose-50
+      {% elif job.status == 'completed' %}bg-green-50
+      {% elif job.status == 'processing' %}bg-amber-50
+      {% elif job.status == 'pending' %}bg-blue-50
+      {% elif job.status == 'cancelled' %}bg-base-300
+      {% endif %}">
+      <td>{{ job.get_analysis_type_display }}</td>
+      <td>{{ job.image.name }}</td>
+      <td>{{ job.get_status_display }}</td>
+      <td>{{ job.queue_name }}</td>
+      <td>{{ job.progress_percentage }}%</td>
+      <td>{{ job.created_at|timesince }} {% translate "ago" %}</td>
+      <td>
+        <a class="btn btn-sm" href="{% url 'pore_analysis_team:job_detail' team_slug job.id %}">
+          {% translate "View" %}
+        </a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

@@ -1,10 +1,13 @@
 import os
+import logging
 from celery import shared_task
 from celery.signals import worker_process_init
 from django.utils import timezone
 from django.db import transaction
 import numpy as np
 from .models import AnalysisJob, AnalysisResult, JobStatus
+
+log = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 1})
@@ -76,3 +79,62 @@ def init_taichi(**kwargs):
     }
     backend = os.environ.get('TAICHI_BACKEND', 'cpu')
     ti.init(arch=arch_map.get(backend, ti.cpu))
+
+
+@shared_task(bind=True, autoretry_for=(), retry_kwargs={"max_retries": 0})
+def run_diffusivity_job(self, job_id):
+    """Execute a diffusivity calculation via the external Julia tortuosity service."""
+    job = AnalysisJob.objects.select_related("image").get(id=job_id)
+
+    job.status = JobStatus.PROCESSING
+    job.started_at = timezone.now()
+    job.progress_percentage = 5
+    job.error_message = ""
+    job.save(update_fields=["status", "started_at", "progress_percentage", "error_message", "updated_at"])
+
+    try:
+        # Verify the Julia service is reachable before loading the array.
+        from julia_client import _server_healthy
+        if not _server_healthy():
+            raise RuntimeError(
+                "Julia tortuosity service is not running or unreachable. "
+                "Start it with: julia julia_server.jl"
+            )
+
+        with job.image.file.open("rb") as f:
+            arr = np.load(f, allow_pickle=False)
+
+        job.progress_percentage = 20
+        job.save(update_fields=["progress_percentage", "updated_at"])
+
+        from .analysis.diffusivity import run_julia_diffusivity
+
+        solution = run_julia_diffusivity(
+            image_array=arr,
+            direction=job.parameters["direction"],
+            tolerance=job.parameters["tolerance"],
+            backend=job.parameters["backend"],
+        )
+
+        job.progress_percentage = 90
+        job.save(update_fields=["progress_percentage", "updated_at"])
+
+        with transaction.atomic():
+            AnalysisResult.objects.update_or_create(
+                job=job,
+                defaults={"metrics": {"solution": solution}},
+            )
+            job.status = JobStatus.COMPLETED
+            job.completed_at = timezone.now()
+            job.progress_percentage = 100
+            job.save(update_fields=["status", "completed_at", "progress_percentage", "updated_at"])
+
+        return {"job_id": str(job.id), "status": "completed"}
+
+    except Exception as exc:
+        log.exception("Diffusivity job %s failed", job_id)
+        job.status = JobStatus.FAILED
+        job.completed_at = timezone.now()
+        job.error_message = str(exc)
+        job.save(update_fields=["status", "completed_at", "error_message", "updated_at"])
+        raise

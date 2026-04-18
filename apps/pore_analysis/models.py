@@ -180,7 +180,8 @@ class UploadedImage(BaseTeamModel):
 class AnalysisType(models.TextChoices):
     """Available types of pore analysis."""
     NETWORK_EXTRACTION = 'network_extraction', _('Pore Network Extraction')
-    PERMEABILITY = 'permeability', _('Permeability Calculation') 
+    PERMEABILITY = 'permeability', _('Permeability Calculation')
+    DIFFUSIVITY = 'diffusivity', _('Diffusivity Calculation')
     MORPHOLOGY = 'morphology', _('Morphological Analysis')
     VISUALIZATION = 'visualization', _('3D Visualization')
     FULL_SUITE = 'full_suite', _('Complete Analysis Suite')

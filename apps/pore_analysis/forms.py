@@ -74,6 +74,65 @@ class PermeabilityLaunchForm(forms.Form):
         }
     
 
+class DiffusivityLaunchForm(forms.Form):
+    DIRECTION_CHOICES = [
+        ("x", _("X direction")),
+        ("y", _("Y direction")),
+        ("z", _("Z direction")),
+    ]
+
+    BACKEND_CHOICES = [
+        ("cpu", _("CPU")),
+        ("gpu", _("GPU")),
+        ("metal", _("Metal")),
+        ("cuda", _("CUDA")),
+    ]
+
+    image = forms.ModelChoiceField(
+        queryset=UploadedImage.objects.none(),
+        label=_("Image"),
+        empty_label=_("Select an image"),
+        widget=forms.Select(attrs={"class": "select select-bordered w-full"}),
+    )
+    direction = forms.ChoiceField(
+        choices=DIRECTION_CHOICES,
+        label=_("Direction"),
+        widget=forms.Select(attrs={"class": "select select-bordered w-full"}),
+    )
+    tolerance = forms.FloatField(
+        label=_("Solver tolerance"),
+        min_value=0.0,
+        initial=1e-5,
+        widget=forms.NumberInput(attrs={"class": "input input-bordered w-full", "step": "any"}),
+    )
+    backend = forms.ChoiceField(
+        choices=BACKEND_CHOICES,
+        label=_("Backend"),
+        initial="cpu",
+        widget=forms.Select(attrs={"class": "select select-bordered w-full"}),
+    )
+
+    def __init__(self, team, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.team = team
+        self.fields["image"].queryset = UploadedImage.objects.filter(team=team).order_by("-created_at")
+
+    def clean(self):
+        cleaned = super().clean()
+        image = cleaned.get("image")
+        direction = cleaned.get("direction")
+        if image and direction == "z" and len(image.dimensions) < 3:
+            self.add_error("direction", _("Z direction requires a 3D image."))
+        return cleaned
+
+    def to_parameters(self):
+        return {
+            "direction": self.cleaned_data["direction"],
+            "tolerance": self.cleaned_data["tolerance"],
+            "backend": self.cleaned_data["backend"],
+        }
+
+
 class TrimImageForm(forms.Form):
     xmin = forms.IntegerField(widget=forms.HiddenInput())
     xmax = forms.IntegerField(widget=forms.HiddenInput())
