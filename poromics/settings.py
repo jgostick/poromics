@@ -86,6 +86,7 @@ PROJECT_APPS = [
     "apps.api.apps.APIConfig",
     "apps.web",
     "apps.teams.apps.TeamConfig",
+    "apps.pore_analysis.apps.PoreAnalysisConfig",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + PEGASUS_APPS + PROJECT_APPS
@@ -552,6 +553,10 @@ LOGGING = {
         "pegasus": {
             "handlers": ["console"],
             "level": env("PEGASUS_LOG_LEVEL", default="DEBUG"),
+        },
+        "apps.pore_analysis": {
+            "handlers": ["console"],
+            "level": "DEBUG",
         },
     },
 }

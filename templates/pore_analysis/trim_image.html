@@ -1,0 +1,157 @@
+{% extends "pore_analysis/base.html" %}
+{% load i18n %}
+
+{% block title %}{% translate "Trim Image" %}{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+  <h1 class="text-2xl font-bold mb-6">{% translate "Trim Image" %}</h1>
+
+    {% if not image %}
+        <div class="card bg-base-100 shadow">
+            <div class="card-body">
+            <h2 class="card-title">{% translate "Select an Image" %}</h2>
+
+            <form method="get" class="space-y-4">
+                <div class="form-control">
+                <label class="label" for="{{ picker_form.image.id_for_label }}">
+                    <span class="label-text">{{ picker_form.image.label }}</span>
+                </label>
+                {{ picker_form.image }}
+                {% if picker_form.image.errors %}
+                    <p class="text-error text-sm mt-1">{{ picker_form.image.errors|join:", " }}</p>
+                {% endif %}
+                </div>
+
+                <div class="card-actions justify-end">
+                <button type="submit" class="btn btn-primary">
+                    {% translate "Load Image" %}
+                </button>
+                </div>
+            </form>
+            </div>
+        </div>
+    {% else %}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@15.8.1/dist/nouislider.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/nouislider@15.8.1/dist/nouislider.min.js"></script>
+  <div x-data="trimmer({{ image.dimensions.0 }}, {{ image.dimensions.1 }}, {{ image.dimensions.2|default:1 }})" x-init="init()" class="space-y-6">
+    <!-- Sliders -->
+    <div class="card bg-base-100 shadow">
+      <div class="card-body">
+        <h2 class="card-title mb-4">{{ image.name }}</h2>
+        
+        <div class="space-y-4">
+          <!-- X Range -->
+            <div>
+            <label class="label">
+                <span class="label-text">X Range: <span x-text="xmin"></span> to <span x-text="xmax"></span></span>
+            </label>
+            <div id="slider-x"></div>
+            </div>
+
+          <!-- Y Range -->
+            <div>
+            <label class="label">
+                <span class="label-text">Y Range: <span x-text="ymin"></span> to <span x-text="ymax"></span></span>
+            </label>
+            <div id="slider-y"></div>
+            </div>
+
+          <!-- Z Range -->
+          <div>
+            <label class="label">
+                <span class="label-text">Z Range: <span x-text="zmin"></span> to <span x-text="zmax"></span></span>
+            </label>
+            <div id="slider-z"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Preview -->
+    <div hx-target="this" hx-swap="innerHTML" id="trim-preview">
+      <!-- Preview will load here -->
+    </div>
+
+    <!-- Apply Button -->
+    <form method="post" class="card bg-base-100 shadow">
+      {% csrf_token %}
+      <input type="hidden" name="image" value="{{ image.id }}">
+      <input type="hidden" name="xmin" :value="xmin" x-bind:value="xmin">
+      <input type="hidden" name="xmax" :value="xmax" x-bind:value="xmax">
+      <input type="hidden" name="ymin" :value="ymin" x-bind:value="ymin">
+      <input type="hidden" name="ymax" :value="ymax" x-bind:value="ymax">
+      <input type="hidden" name="zmin" :value="zmin" x-bind:value="zmin">
+      <input type="hidden" name="zmax" :value="zmax" x-bind:value="zmax">
+      <div class="card-body">
+        <button type="submit" class="btn btn-success">{% translate "Apply Trim" %}</button>
+      </div>
+    </form>
+  </div>
+
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script>
+    function trimmer(maxX, maxY, maxZ) {
+    return {
+        xmin: 0, xmax: maxX,
+        ymin: 0, ymax: maxY,
+        zmin: 0, zmax: maxZ,
+        maxX, maxY, maxZ,
+        _debounce: null,
+
+        init() {
+        this.makeSlider('slider-x', 0, this.maxX, [this.xmin, this.xmax], (a, b) => {
+            this.xmin = a;
+            this.xmax = b;
+        });
+        this.makeSlider('slider-y', 0, this.maxY, [this.ymin, this.ymax], (a, b) => {
+            this.ymin = a;
+            this.ymax = b;
+        });
+        this.makeSlider('slider-z', 0, this.maxZ, [this.zmin, this.zmax], (a, b) => {
+            this.zmin = a;
+            this.zmax = b;
+        });
+        this.updatePreview();
+        },
+
+        makeSlider(id, min, max, start, onUpdate) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        noUiSlider.create(el, {
+            start: start,
+            connect: true,
+            step: 1,
+            range: { min: min, max: max }
+        });
+        el.noUiSlider.on('update', (values) => {
+            const a = Math.round(values[0]);
+            const b = Math.round(values[1]);
+            onUpdate(a, b);
+            this.queuePreview();
+        });
+        },
+
+        queuePreview() {
+        clearTimeout(this._debounce);
+        this._debounce = setTimeout(() => this.updatePreview(), 120);
+        },
+
+        updatePreview() {
+        htmx.ajax('POST', '{% url "pore_analysis_team:trim_image_preview" team_slug %}', {
+            target: '#trim-preview',
+            values: {
+            image_id: '{{ image.id }}',
+            xmin: this.xmin, xmax: this.xmax,
+            ymin: this.ymin, ymax: this.ymax,
+            zmin: this.zmin, zmax: this.zmax,
+            }
+        });
+        }
+    }
+    }
+  </script>
+
+  {% endif %}
+</div>
+{% endblock %}

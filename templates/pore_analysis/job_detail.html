@@ -1,0 +1,68 @@
+{% extends "pore_analysis/base.html" %}
+{% load i18n %}
+
+{% block title %}{% translate "Job Details" %}{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+  <div class="mb-6 flex items-center justify-between">
+    <h1 class="text-2xl font-bold">{% translate "Analysis Job" %}</h1>
+    <a href="{% url 'pore_analysis_team:job_list' team_slug %}" class="btn">
+      {% translate "Back to Jobs" %}
+    </a>
+  </div>
+
+  <div class="card bg-base-100 shadow">
+    <div class="card-body space-y-4">
+      <div class="flex items-center justify-between">
+        <span class="text-sm text-base-content/70">{% translate "Status" %}</span>
+        <span class="badge
+          {% if job.status == 'completed' %}badge-success
+          {% elif job.status == 'failed' %}badge-error
+          {% elif job.status == 'processing' %}badge-warning
+          {% else %}badge-ghost{% endif %}">
+          {{ job.get_status_display }}
+        </span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+        <div>
+          <span class="text-base-content/70">{% translate "Type" %}:</span>
+          {{ job.get_analysis_type_display }}
+        </div>
+        <div>
+          <span class="text-base-content/70">{% translate "Image" %}:</span>
+          {{ job.image.name }}
+        </div>
+        <div>
+          <span class="text-base-content/70">{% translate "Started" %}:</span>
+          {{ job.started_at|default:"-" }}
+        </div>
+        <div>
+          <span class="text-base-content/70">{% translate "Completed" %}:</span>
+          {{ job.completed_at|default:"-" }}
+        </div>
+        <div>
+          <span class="text-base-content/70">{% translate "Progress" %}:</span>
+          {{ job.progress_percentage }}%
+        </div>
+        <div>
+          <span class="text-base-content/70">{% translate "Task ID" %}:</span>
+          {{ job.celery_task_id|default:"-" }}
+        </div>
+      </div>
+
+      {% if job.error_message %}
+      <div class="alert alert-error">
+        <span>{{ job.error_message }}</span>
+      </div>
+      {% endif %}
+
+      {% if job.result %}
+      <div class="divider">{% translate "Result" %}</div>
+      <pre class="bg-base-200 p-4 rounded overflow-x-auto text-xs">{{ job.result.metrics|pprint }}</pre>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "pore_analysis/base.html" %}
+{% load i18n %}
+
+{% block title %}{% translate "Jobs" %}{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+  <div class="mb-6 flex items-center justify-between">
+    <h1 class="text-2xl font-bold">{% translate "Analysis Jobs" %}</h1>
+  </div>
+
+  <div class="card bg-base-100 shadow">
+    <div class="card-body p-0">
+      {% if jobs %}
+      <div class="overflow-x-auto">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>{% translate "Type" %}</th>
+              <th>{% translate "Image" %}</th>
+              <th>{% translate "Status" %}</th>
+              <th>{% translate "Progress" %}</th>
+              <th>{% translate "Created" %}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for job in jobs %}
+            <tr class="
+              {% if job.status == 'failed' %}bg-rose-50
+              {% elif job.status == 'completed' %}bg-green-50
+              {% elif job.status == 'processing' %}bg-amber-50
+              {% elif job.status == 'pending' %}bg-blue-50
+              {% elif job.status == 'cancelled' %}bg-grey-50
+              {% endif %}">
+              <td>{{ job.get_analysis_type_display }}</td>
+              <td>{{ job.image.name }}</td>
+              <td>{{ job.get_status_display }}</td>
+              <td>{{ job.progress_percentage }}%</td>
+              <td>{{ job.created_at|timesince }} {% translate "ago" %}</td>
+              <td>
+                <a class="btn btn-sm" href="{% url 'pore_analysis_team:job_detail' team_slug job.id %}">
+                  {% translate "View" %}
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="p-6 text-base-content/70">{% translate "No jobs yet." %}</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

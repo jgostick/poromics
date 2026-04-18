@@ -1,0 +1,209 @@
+import os
+import tempfile
+
+import numpy as np
+from django.contrib import messages
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.translation import gettext as _
+
+from apps.pore_analysis.models import AnalysisType, UploadedImage
+from apps.teams.decorators import login_and_team_required
+
+from .utils import get_pore_analysis_context
+
+
+@login_and_team_required 
+def image_list(request, team_slug):
+    """List all uploaded images for the team."""
+    images = UploadedImage.objects.filter(team=request.team).order_by('-created_at')
+    
+    context = {
+        'images': images,
+    }
+    
+    # Add sidebar context
+    context.update(get_pore_analysis_context(request))
+    
+    return render(request, 'pore_analysis/image_list.html', context)
+
+
+@login_and_team_required
+def image_detail(request, team_slug, image_id):
+    """View details of a specific uploaded image."""
+    image = get_object_or_404(UploadedImage, id=image_id, team=request.team)
+    analysis_jobs = image.analysis_jobs.all().order_by('-created_at')
+    
+    context = {
+        'image': image,
+        'analysis_jobs': analysis_jobs,
+        'analysis_types': AnalysisType.choices,
+        'team_slug': team_slug,
+    }
+    context.update(get_pore_analysis_context(request))
+    return render(request, 'pore_analysis/image_detail.html', context)
+
+
+@login_and_team_required
+def delete_image(request, team_slug, image_id):
+    """Delete an uploaded image and its stored files."""
+    if request.method != "POST":
+        messages.error(request, _("Invalid request method."))
+        return redirect("pore_analysis_team:image_list", team_slug=team_slug)
+
+    image = get_object_or_404(UploadedImage, id=image_id, team=request.team)
+    image_name = image.name
+
+    try:
+        # Remove stored files first (model delete does not always remove file blobs)
+        if image.file:
+            image.file.delete(save=False)
+        if image.thumbnail:
+            image.thumbnail.delete(save=False)
+
+        image.delete()
+        messages.success(request, _("Image '{}' was deleted.").format(image_name))
+    except Exception as exc:
+        messages.error(request, _("Could not delete image: {}").format(str(exc)))
+
+    return redirect("pore_analysis_team:image_list", team_slug=team_slug)
+
+
+@login_and_team_required
+def upload_image(request, team_slug):
+    """Upload a new volumetric image for analysis."""
+    if request.method == 'POST':
+        try:
+            # Get form data
+            uploaded_file = request.FILES.get('file')
+            name = request.POST.get('name', '').strip()
+            description = request.POST.get('description', '').strip()
+            voxel_size = request.POST.get('voxel_size', '').strip()
+
+            # Validate required fields
+            if not uploaded_file:
+                return JsonResponse({'success': False, 'message': _('No file uploaded')})
+            
+            if not name:
+                return JsonResponse({'success': False, 'message': _('Image name is required')})
+
+            # Validate file type
+            if not uploaded_file.name.lower().endswith('.npy'):
+                return JsonResponse({'success': False, 'message': _('Only .npy files are supported')})
+
+            # Validate file size (1GB limit)
+            if uploaded_file.size > 1024 * 1024 * 1024:
+                return JsonResponse({'success': False, 'message': _('File size must be less than 1GB')})
+
+            # Process the numpy file to extract metadata
+            try:
+                # Save uploaded file to temporary location
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.npy') as temp_file:
+                    for chunk in uploaded_file.chunks():
+                        temp_file.write(chunk)
+                    temp_file_path = temp_file.name
+
+                # Load and validate numpy array
+                try:
+                    array = np.load(temp_file_path, allow_pickle=False).astype(bool)
+                except Exception as e:
+                    os.unlink(temp_file_path)  # Clean up temp file
+                    return JsonResponse({'success': False, 'message': _('Invalid .npy file format')})
+                
+                # Validate array properties
+                if array.dtype != bool:
+                    os.unlink(temp_file_path)
+                    return JsonResponse({'success': False, 'message': _('Array must be boolean type (True=pore, False=solid)')})
+                
+                # Get array dimensions
+                dimensions = list(array.shape)
+                
+                # Validate dimensions (2D or 3D only)
+                if len(dimensions) < 2 or len(dimensions) > 3:
+                    os.unlink(temp_file_path)
+                    return JsonResponse({'success': False, 'message': _('Array must be 2D or 3D')})
+
+                # Clean up temp file
+                os.unlink(temp_file_path)
+
+            except Exception as e:
+                return JsonResponse({'success': False, 'message': _('Error processing numpy file: {}').format(str(e))})
+
+            # Parse voxel size
+            voxel_size_value = None
+            if voxel_size:
+                try:
+                    voxel_size_value = float(voxel_size)
+                    if voxel_size_value <= 0:
+                        return JsonResponse({'success': False, 'message': _('Voxel size must be positive')})
+                except ValueError:
+                    return JsonResponse({'success': False, 'message': _('Invalid voxel size')})
+
+            # Create database record
+            uploaded_image = UploadedImage.objects.create(
+                team=request.team,
+                uploaded_by=request.user,
+                name=name,
+                description=description,
+                file=uploaded_file,
+                file_size=uploaded_file.size,
+                dimensions=dimensions,
+                voxel_size=voxel_size_value,
+            )
+            
+            # Ensure the file is saved before generating thumbnail
+            uploaded_image.save()
+            
+            # Generate thumbnail using porespy
+            import logging
+            logger = logging.getLogger(__name__)
+            try:
+                logger.info(f"Attempting to generate thumbnail for {uploaded_image.name}")
+                logger.info(f"File path: {uploaded_image.file.path}")
+                logger.info(f"File exists: {os.path.exists(uploaded_image.file.path)}")
+                
+                thumbnail_data = uploaded_image.generate_thumbnail()
+                if thumbnail_data:
+                    uploaded_image.save()  # Save again to persist the thumbnail
+                    logger.info(f"Thumbnail generation completed for {uploaded_image.name}")
+                else:
+                    logger.warning(f"Thumbnail generation returned None for {uploaded_image.name}")
+                    
+            except Exception as e:
+                # Don't fail upload if thumbnail generation fails
+                error_msg = f"Failed to generate thumbnail for {uploaded_image.name}: {type(e).__name__}: {e}"
+                logger.error(error_msg, exc_info=True)
+                print(error_msg)
+                import traceback
+                traceback.print_exc()
+
+            # Compute metrics
+            try:
+                uploaded_image.compute_metrics(save=True)
+            except Exception as e:
+                logger.warning(f"Metrics computation failed for {uploaded_image.name}: {e}")
+
+            # Return success response for AJAX
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': True,
+                    'message': _('Image uploaded successfully!'),
+                    'redirect_url': f'/a/{team_slug}/pore-analysis/images/{uploaded_image.id}/'
+                })
+
+            # Regular form submission
+            messages.success(request, _('Image uploaded successfully!'))
+            return redirect('pore_analysis_team:image_detail', team_slug=team_slug, image_id=uploaded_image.id)
+
+        except Exception as e:
+            error_message = _('Upload failed: {}').format(str(e))
+            
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({'success': False, 'message': error_message})
+            
+            messages.error(request, error_message)
+            return render(request, 'pore_analysis/upload_image.html')
+
+    # GET request - show upload form
+    context = get_pore_analysis_context(request)
+    return render(request, 'pore_analysis/upload_image.html', context)

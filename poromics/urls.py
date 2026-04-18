@@ -26,6 +26,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, Spec
 from apps.teams.urls import team_urlpatterns as single_team_urls
 from apps.web.sitemaps import StaticViewSitemap
 from apps.web.urls import team_urlpatterns as web_team_urls
+from apps.pore_analysis.urls import urlpatterns as pore_analysis_urls, team_urlpatterns as pore_analysis_team_urls
 
 sitemaps = {
     "static": StaticViewSitemap(),
@@ -35,6 +36,7 @@ sitemaps = {
 team_urlpatterns = [
     path("", include(web_team_urls)),
     path("team/", include(single_team_urls)),
+    path("pore-analysis/", include(pore_analysis_team_urls)),
 ]
 
 urlpatterns = [
@@ -46,6 +48,7 @@ urlpatterns = [
     path("jsi18n/", JavaScriptCatalog.as_view(), name="javascript-catalog"),
     path("sitemap.xml", sitemap, {"sitemaps": sitemaps}, name="django.contrib.sitemaps.views.sitemap"),
     path("a/<slug:team_slug>/", include(team_urlpatterns)),
+    path("pore-analysis/", include(pore_analysis_urls)),  # Global pore analysis URLs
     path("accounts/", include("allauth.urls")),
     path("users/", include("apps.users.urls")),
     path("teams/", include("apps.teams.urls")),

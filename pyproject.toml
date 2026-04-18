@@ -27,6 +27,9 @@ line-ending = "auto"
 [tool.setuptools]
 py-modules = []
 
+[tool.uv.sources]
+kabs = { git = "https://github.com/PMEAL/kabs" }
+
 [project]
 name = "poromics"
 version = "0.1.0"
@@ -54,6 +57,10 @@ dependencies = [
     "djangorestframework",
     "djangorestframework-api-key",
     "drf-spectacular",
+    "kabs",
+    "numpy>=2.4.4",
+    "plotly>=6.7.0",
+    "porespy>=3.0.4",
     "psycopg",
     "redis",
     "sentry-sdk[django]>=2.55.0",

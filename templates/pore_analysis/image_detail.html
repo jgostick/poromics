@@ -1,0 +1,171 @@
+{% extends "pore_analysis/base.html" %}
+{% load i18n %}
+
+{% block title %}{{ image.name }} - {% translate "Image Details" %}{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+  <!-- Header -->
+  <div class="mb-8">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-3xl font-bold mb-2">{{ image.name }}</h1>
+        <p class="text-gray-600">
+          {% translate "Uploaded" %} {{ image.created_at|timesince }} {% translate "ago by" %} {{ image.uploaded_by.get_full_name|default:image.uploaded_by.email }}
+        </p>
+      </div>
+      <div class="flex gap-3">
+        <a href="{% url 'pore_analysis_team:image_list' team_slug %}" class="btn">
+          {% translate "Back to Images" %}</a>
+        <button class="btn btn-primary">{% translate "Start Analysis" %}</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <!-- Image Details -->
+    <div class="lg:col-span-2">
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold mb-4">{% translate "Image Information" %}</h2>
+        
+        <div class="space-y-4">
+          {% if image.description %}
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">{% translate "Description" %}</label>
+            <p class="text-gray-900">{{ image.description }}</p>
+          </div>
+          {% endif %}
+
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{% translate "File Size" %}</label>
+              <p class="text-gray-900">{{ image.file_size_mb }} MB</p>
+            </div>
+            
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{% translate "Dimensions" %}</label>
+              <p class="text-gray-900">{{ image.dimensions.0 }} × {{ image.dimensions.1 }}{% if image.dimensions.2 %} × {{ image.dimensions.2 }}{% endif %}</p>
+            </div>
+            
+            {% if image.voxel_size %}
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{% translate "Voxel Size" %}</label>
+              <p class="text-gray-900">{{ image.voxel_size }} µm</p>
+            </div>
+            {% endif %}
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{% translate "Type" %}</label>
+              <p class="text-gray-900">
+                {% if image.dimensions|length == 2 %}
+                  2D Image
+                {% else %}
+                  3D Volume
+                {% endif %}
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">{% translate "File Path" %}</label>
+            <p class="text-gray-600 text-sm font-mono">{{ image.file.name }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Analysis Jobs -->
+      <div class="bg-white rounded-lg shadow-md p-6 mt-6">
+        <h2 class="text-xl font-semibold mb-4">{% translate "Analysis History" %}</h2>
+        
+        {% if analysis_jobs %}
+          <div class="space-y-3">
+            {% for job in analysis_jobs %}
+              <div class="flex items-center justify-between p-4 border rounded">
+                <div>
+                  <h3 class="font-medium">{{ job.get_analysis_type_display }}</h3>
+                  <p class="text-sm text-gray-500">
+                    {% translate "Started" %} {{ job.created_at|timesince }} {% translate "ago" %}
+                    {% if job.completed_at %}• {% translate "Completed in" %} {{ job.duration.total_seconds|floatformat:1 }}s{% endif %}
+                  </p>
+                  <span class="inline-block px-2 py-1 text-xs rounded-full
+                    {% if job.status == 'completed' %}bg-green-100 text-green-800
+                    {% elif job.status == 'failed' %}bg-red-100 text-red-800  
+                    {% elif job.status == 'processing' %}bg-yellow-100 text-yellow-800
+                    {% else %}bg-gray-100 text-gray-800{% endif %}">
+                    {{ job.get_status_display }}
+                  </span>
+                </div>
+                <a href="{% url 'pore_analysis_team:job_detail' team_slug job.id %}" class="btn btn-sm">
+                  {% translate "View Details" %}
+                </a>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="text-gray-500 text-center py-8">
+            {% translate "No analyses have been run on this image yet." %}
+          </p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Actions Sidebar -->
+    <div class="space-y-6">
+      <!-- Quick Stats -->
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h3 class="font-semibold mb-4">{% translate "Quick Stats" %}</h3>
+        <div class="space-y-3 text-sm">
+          <div class="flex justify-between">
+            <span class="text-gray-600">{% translate "Total Voxels" %}:</span>
+            <span class="font-medium">{{ image.total_voxels|floatformat:0 }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-600">{% translate "Upload Date" %}:</span>
+            <span class="font-medium">{{ image.created_at|date:"M d, Y" }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-600">{% translate "Team" %}:</span>
+            <span class="font-medium">{{ image.team.name }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Available Analyses -->
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h3 class="font-semibold mb-4">{% translate "Available Analyses" %}</h3>
+        <div class="space-y-2">
+          {% for analysis_type, display_name in analysis_types %}
+          <button class="w-full text-left p-3 border rounded hover:bg-gray-50 transition-colors group">
+            <div class="font-medium">{{ display_name }}</div>
+            <div class="text-sm text-gray-500 mt-1">
+              {% if analysis_type == "network_extraction" %}
+                Extract pore network topology
+              {% elif analysis_type == "permeability" %}
+                Calculate flow properties  
+              {% elif analysis_type == "morphology" %}
+                Analyze pore shapes and sizes
+              {% elif analysis_type == "visualization" %}
+                Generate 3D visualizations
+              {% else %}
+                Complete analysis suite
+              {% endif %}
+            </div>
+            <div class="text-xs text-blue-600 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              {% translate "Coming Soon" %}
+            </div>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Download -->
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h3 class="font-semibold mb-4">{% translate "Download" %}</h3>
+        <a href="{{ image.file.url }}" download class="btn btn-secondary w-full">
+          {% translate "Download Original File" %}
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

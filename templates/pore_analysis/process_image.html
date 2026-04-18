@@ -1,0 +1,55 @@
+{% extends "pore_analysis/base.html" %}
+{% load i18n %}
+
+{% block title %}{% translate "Process Image" %}{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+  <div class="mb-8">
+    <h1 class="text-3xl font-bold text-base-content">{% translate "Process Image" %}</h1>
+    <p class="text-base-content/70 mt-2">{% translate "Choose an image and apply a porespy operation." %}</p>
+  </div>
+
+  <div class="card bg-base-100 shadow-lg">
+    <div class="card-body">
+      {% if images %}
+        <form method="post" class="space-y-6">
+          {% csrf_token %}
+
+          <div class="form-control">
+            <label class="label" for="image_id">
+              <span class="label-text">{% translate "Select image" %}</span>
+            </label>
+            <select id="image_id" name="image_id" class="select select-bordered w-full" required>
+              {% for image in images %}
+                <option value="{{ image.id }}">
+                  {{ image.name }} ({{ image.file_size_mb }} MB)
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="alert alert-warning">
+            <span>{% translate "This will overwrite the selected input image." %}</span>
+          </div>
+
+          <div class="card-actions justify-end">
+            <button type="submit" class="btn btn-primary">
+              {% translate "Fill Invalid Pores" %}
+            </button>
+          </div>
+        </form>
+      {% else %}
+        <div class="alert alert-info">
+          <span>{% translate "No images available. Upload an image first." %}</span>
+        </div>
+        <div class="mt-4">
+          <a href="/a/{{ team_slug }}/pore-analysis/upload/" class="btn btn-primary">
+            {% translate "Upload Image" %}
+          </a>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
