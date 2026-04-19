@@ -1,20 +1,8 @@
-import json
+import pickle
 from typing import Any
 
 import numpy as np
 import porespy as ps
-
-
-def _jsonable_value(value: Any):
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, np.generic):
-        return value.item()
-    if isinstance(value, dict):
-        return {str(k): _jsonable_value(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_jsonable_value(v) for v in value]
-    return value
 
 
 def _normalize_parallel_kw(params: dict[str, Any]) -> dict[str, Any] | None:
@@ -28,6 +16,20 @@ def _normalize_parallel_kw(params: dict[str, Any]) -> dict[str, Any] | None:
         "overlap": parallel_kw.get("overlap"),
     }
     return {k: v for k, v in normalized.items() if v is not None}
+
+
+def _extract_net_dict(results: Any) -> dict[str, Any]:
+    """Return the OpenPNM-style network dict from either dict or Results-like output."""
+    if isinstance(results, dict):
+        if "net" in results and isinstance(results["net"], dict):
+            return results["net"]
+        if "network" in results and isinstance(results["network"], dict):
+            return results["network"]
+        if any(str(key).startswith(("pore.", "throat.")) for key in results):
+            return results
+    if hasattr(results, "network"):
+        return dict(results.network)
+    raise ValueError("Extraction output did not include a usable network dictionary.")
 
 
 def run_network_extraction(image_array: np.ndarray, params: dict[str, Any], voxel_size: float = 1.0) -> dict[str, Any]:
@@ -71,12 +73,20 @@ def run_network_extraction(image_array: np.ndarray, params: dict[str, Any], voxe
     else:
         raise ValueError(f"Unsupported extraction method: {method}")
 
-    network = dict(results.network)
+    net = _extract_net_dict(results)
     return {
         "method": method,
-        "network": network,
+        "net": net,
     }
 
 
-def serialize_network_payload(payload: dict[str, Any]) -> bytes:
-    return json.dumps(_jsonable_value(payload)).encode("utf-8")
+def serialize_net_payload(payload: dict[str, Any]) -> bytes:
+    """Serialize a payload dictionary while preserving NumPy arrays."""
+    return pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def deserialize_net_payload(payload: bytes) -> dict[str, Any]:
+    obj = pickle.loads(payload)
+    if not isinstance(obj, dict):
+        raise ValueError("Serialized network payload is not a dict.")
+    return obj

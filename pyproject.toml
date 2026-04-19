@@ -69,6 +69,7 @@ dependencies = [
     "redis",
     "sentry-sdk[django]>=2.55.0",
     "whitenoise[brotli]",
+    "openpnm>=3.5.2",
 ]
 
 [dependency-groups]

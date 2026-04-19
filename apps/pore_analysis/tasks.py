@@ -221,23 +221,23 @@ def run_network_extraction_job(self, job_id):
         job.progress_percentage = 20
         job.save(update_fields=["progress_percentage", "updated_at"])
 
-        from .analysis.network_extraction import run_network_extraction, serialize_network_payload
+        from .analysis.network_extraction import run_network_extraction, serialize_net_payload
 
         output = run_network_extraction(
             image_array=arr,
             params=job.parameters or {},
             voxel_size=float(job.image.voxel_size or 1.0),
         )
-        network = output["network"]
+        net = output["net"]
         method = output["method"]
 
-        pore_coords = network.get("pore.coords")
-        throat_conns = network.get("throat.conns")
+        pore_coords = net.get("pore.coords")
+        throat_conns = net.get("throat.conns")
         pore_count = int(len(pore_coords)) if pore_coords is not None else 0
         throat_count = int(len(throat_conns)) if throat_conns is not None else 0
 
-        payload_bytes = serialize_network_payload(output)
-        artifact_name = f"network_{job.id}.json"
+        payload_bytes = serialize_net_payload({"net": net})
+        artifact_name = f"network_{job.id}.pkl"
 
         job.progress_percentage = 90
         job.save(update_fields=["progress_percentage", "updated_at"])
@@ -252,6 +252,7 @@ def run_network_extraction_job(self, job_id):
                             "backend": (job.parameters or {}).get("backend"),
                             "pore_count": pore_count,
                             "throat_count": throat_count,
+                            "network_artifact_format": "pickle/wrapper-with-net",
                         }
                     },
                 },

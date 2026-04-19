@@ -1,5 +1,6 @@
 import uuid
 import os
+import pickle
 from decimal import Decimal
 from django.db import models
 from django.contrib.auth import get_user_model
@@ -258,6 +259,29 @@ class AnalysisResult(BaseModel):
         
     def __str__(self):
         return f"Results for {self.job}"
+
+    def load_network_payload(self) -> dict | None:
+        """Load the stored network payload from network_file."""
+        if not self.network_file:
+            return None
+
+        with self.network_file.open("rb") as f:
+            obj = pickle.load(f)
+
+        if not isinstance(obj, dict):
+            raise ValueError("Stored network payload is not a dict.")
+        return obj
+
+    def load_network_dict(self) -> dict | None:
+        """Load the net dictionary (numpy arrays preserved) for OpenPNM use."""
+        payload = self.load_network_payload()
+        if payload is None:
+            return None
+
+        # New format: {"net": {...}}, legacy format: {...}
+        if "net" in payload and isinstance(payload["net"], dict):
+            return payload["net"]
+        return payload
 
 
 class CreditTransaction(BaseTeamModel):
