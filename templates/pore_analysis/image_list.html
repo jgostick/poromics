@@ -102,18 +102,17 @@
                         <span class="font-medium">{{ image.metrics.range|join:" - " }}</span>
                       </div>
                     {% endif %}
+                    <div class="flex justify-between">
+                      <span class="text-base-content/70">{% translate "Voxel size" %}</span>
+                      {% if image.voxel_size %}
+                        <span class="font-medium">{{ image.voxel_size }} µm</span>
+                      {% else %}
+                        <span class="italic">{% translate "Not set" %}</span>
+                      {% endif %}
+                    </div>
                   </div>
                 </div>
               {% endif %}
-
-              <div class="flex justify-between items-center text-xs text-base-content/60 mb-1">
-                <span>{% translate "Voxel size" %}</span>
-                {% if image.voxel_size %}
-                  <span class="font-medium text-base-content">{{ image.voxel_size }} µm</span>
-                {% else %}
-                  <span class="italic">{% translate "Not set" %}</span>
-                {% endif %}
-              </div>
 
               <!-- Analysis Status -->
               <div class="card-actions justify-between items-center">

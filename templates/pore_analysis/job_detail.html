@@ -69,6 +69,32 @@
       </div>
       {% endif %}
 
+      {% if job.analysis_type == 'network_extraction' and job.result.metrics.solution %}
+      <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+        <div>
+          <span class="text-base-content/70">{% translate "Method" %}:</span>
+          {{ job.result.metrics.solution.method|default:"-" }}
+        </div>
+        <div>
+          <span class="text-base-content/70">{% translate "Backend" %}:</span>
+          {{ job.result.metrics.solution.backend|default:"-" }}
+        </div>
+        <div>
+          <span class="text-base-content/70">{% translate "Pores" %}:</span>
+          {{ job.result.metrics.solution.pore_count|default:"-" }}
+        </div>
+        <div>
+          <span class="text-base-content/70">{% translate "Throats" %}:</span>
+          {{ job.result.metrics.solution.throat_count|default:"-" }}
+        </div>
+      </div>
+      {% if job.result.network_file %}
+      <a class="btn btn-sm mt-3" href="{{ job.result.network_file.url }}" download>
+        {% translate "Download Network File" %}
+      </a>
+      {% endif %}
+      {% endif %}
+
       <details class="mt-4">
         <summary class="cursor-pointer text-sm text-base-content/70 hover:text-base-content">
           {% translate "Raw result data" %}

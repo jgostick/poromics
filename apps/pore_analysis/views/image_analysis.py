@@ -6,18 +6,34 @@ from django.utils import timezone
 from django.utils.translation import gettext as _
 from kombu.exceptions import OperationalError
 
-from apps.pore_analysis.forms import DiffusivityLaunchForm, PermeabilityLaunchForm, PoreSizeLaunchForm
+from apps.pore_analysis.forms import (
+    DiffusivityLaunchForm,
+    NetworkExtractionLaunchForm,
+    PermeabilityLaunchForm,
+    PoreSizeLaunchForm,
+)
 from apps.pore_analysis.models import AnalysisJob, AnalysisType, JobStatus, UploadedImage
-from apps.pore_analysis.tasks import run_diffusivity_job, run_permeability_job, run_poresize_job
+from apps.pore_analysis.tasks import (
+    run_diffusivity_job,
+    run_network_extraction_job,
+    run_permeability_job,
+    run_poresize_job,
+)
 from apps.teams.decorators import login_and_team_required
 
-from .utils import BASIC_CPU_QUEUE_MAP, JULIA_QUEUE_MAP, TAICHI_QUEUE_MAP, get_pore_analysis_context
+from .utils import (
+    BASIC_CPU_QUEUE_MAP,
+    JULIA_QUEUE_MAP,
+    NETWORK_EXTRACTION_QUEUE_MAP,
+    TAICHI_QUEUE_MAP,
+    get_pore_analysis_context,
+)
 
 
 @login_and_team_required
 def start_analysis(request, team_slug, image_id):
     """Start a new analysis on an uploaded image."""
-    image = get_object_or_404(UploadedImage, id=image_id, team=request.team)
+    get_object_or_404(UploadedImage, id=image_id, team=request.team)
     
     if request.method == 'POST':
         analysis_type = request.POST.get('analysis_type')
@@ -228,3 +244,59 @@ def pore_size_launch(request, team_slug):
     }
     context.update(get_pore_analysis_context(request))
     return render(request, TEMPLATE_PATH, context)
+
+
+@login_and_team_required
+def network_extraction_launch(request, team_slug):
+    if request.method == "POST":
+        form = NetworkExtractionLaunchForm(request.team, request.POST)
+        if form.is_valid():
+            image = form.cleaned_data["image"]
+            params = form.to_parameters()
+            queue = NETWORK_EXTRACTION_QUEUE_MAP.get(params["backend"], "network-cpu")
+
+            ok, reason = _broker_ready(run_network_extraction_job.app)
+            if not ok:
+                messages.error(request, _("Queue service unavailable. %(reason)s") % {"reason": reason})
+                return redirect("pore_analysis_team:network_extraction_launch", team_slug=team_slug)
+
+            job = AnalysisJob.objects.create(
+                team=request.team,
+                image=image,
+                analysis_type=AnalysisType.NETWORK_EXTRACTION,
+                started_by=request.user,
+                estimated_cost=Decimal("0.00"),
+                parameters=params,
+                status=JobStatus.PENDING,
+            )
+
+            try:
+                task = run_network_extraction_job.apply_async(args=[str(job.id)], queue=queue)
+            except Exception as exc:
+                job.status = JobStatus.FAILED
+                job.error_message = f"Failed to enqueue task: {exc}"
+                job.completed_at = timezone.now()
+                job.save(update_fields=["status", "error_message", "completed_at", "updated_at"])
+                messages.error(
+                    request,
+                    _("Could not queue job on '%(queue)s'. %(reason)s")
+                    % {
+                        "queue": queue,
+                        "reason": str(exc),
+                    },
+                )
+                return redirect("pore_analysis_team:network_extraction_launch", team_slug=team_slug)
+
+            job.celery_task_id = task.id
+            job.save(update_fields=["celery_task_id", "updated_at"])
+            messages.success(request, _("Network extraction job queued."))
+            return redirect("pore_analysis_team:job_detail", team_slug=team_slug, job_id=job.id)
+    else:
+        form = NetworkExtractionLaunchForm(request.team)
+
+    context = {
+        "form": form,
+        "team_slug": team_slug,
+    }
+    context.update(get_pore_analysis_context(request))
+    return render(request, "pore_analysis/network_extraction_launch.html", context)

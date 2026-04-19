@@ -187,4 +187,241 @@ class ImagePickerForm(forms.Form):
     def __init__(self, team, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["image"].queryset = UploadedImage.objects.filter(team=team).order_by("-created_at")
+
+
+class NetworkExtractionLaunchForm(forms.Form):
+    METHOD_CHOICES = [
+        ("snow2", _("SNOW2")),
+        ("magnet", _("MAGNET")),
+    ]
+
+    BACKEND_CHOICES = [
+        ("cpu", _("CPU (serial)")),
+        ("parallel", _("Parallel (Dask)")),
+    ]
+
+    SNOW2_ACCURACY_CHOICES = [
+        ("standard", _("Standard")),
+        ("high", _("High")),
+    ]
+
+    MAGNET_THROAT_JUNCTION_CHOICES = [
+        ("", _("None")),
+        ("maximum filter", _("Maximum Filter")),
+        ("fast marching", _("Fast Marching")),
+    ]
+
+    image = forms.ModelChoiceField(
+        queryset=UploadedImage.objects.none(),
+        label=_("Image"),
+        empty_label=_("Select an image"),
+        widget=forms.Select(attrs={"class": "select select-bordered w-full"}),
+    )
+    method = forms.ChoiceField(
+        choices=METHOD_CHOICES,
+        label=_("Extraction method"),
+        initial="snow2",
+        widget=forms.Select(attrs={"class": "select select-bordered w-full"}),
+    )
+    backend = forms.ChoiceField(
+        choices=BACKEND_CHOICES,
+        label=_("Backend"),
+        initial="cpu",
+        widget=forms.Select(attrs={"class": "select select-bordered w-full"}),
+    )
+
+    # snow2 fields
+    boundary_width = forms.IntegerField(
+        label=_("Boundary width (voxels)"),
+        min_value=0,
+        initial=3,
+        widget=forms.NumberInput(attrs={"class": "input input-bordered w-full"}),
+    )
+    accuracy = forms.ChoiceField(
+        choices=SNOW2_ACCURACY_CHOICES,
+        label=_("Accuracy"),
+        initial="standard",
+        widget=forms.Select(attrs={"class": "select select-bordered w-full"}),
+    )
+    sigma = forms.FloatField(
+        label=_("Gaussian sigma"),
+        min_value=0.0,
+        initial=0.4,
+        widget=forms.NumberInput(attrs={"class": "input input-bordered w-full", "step": "any"}),
+    )
+    r_max = forms.IntegerField(
+        label=_("Peak filter radius (r_max)"),
+        min_value=1,
+        initial=4,
+        widget=forms.NumberInput(attrs={"class": "input input-bordered w-full"}),
+    )
+
+    # magnet fields
+    surface = forms.BooleanField(
+        label=_("Trim floating surface solids (3D only)"),
+        required=False,
+        widget=forms.CheckboxInput(attrs={"class": "checkbox"}),
+    )
+    s = forms.IntegerField(
+        label=_("Junction merge threshold (s)"),
+        required=False,
+        min_value=1,
+        widget=forms.NumberInput(attrs={"class": "input input-bordered w-full", "placeholder": "Use default"}),
+    )
+    l_max = forms.IntegerField(
+        label=_("Throat max-filter length (l_max)"),
+        min_value=1,
+        initial=7,
+        widget=forms.NumberInput(attrs={"class": "input input-bordered w-full"}),
+    )
+    throat_junctions = forms.ChoiceField(
+        choices=MAGNET_THROAT_JUNCTION_CHOICES,
+        required=False,
+        label=_("Throat junction mode"),
+        widget=forms.Select(attrs={"class": "select select-bordered w-full"}),
+    )
+    throat_area = forms.BooleanField(
+        label=_("Compute throat area"),
+        required=False,
+        widget=forms.CheckboxInput(attrs={"class": "checkbox"}),
+    )
+    n_walkers = forms.IntegerField(
+        label=_("Throat area walkers"),
+        required=False,
+        min_value=1,
+        initial=10,
+        widget=forms.NumberInput(attrs={"class": "input input-bordered w-full"}),
+    )
+    step_size = forms.FloatField(
+        label=_("Throat area step size"),
+        required=False,
+        min_value=0.0,
+        initial=0.5,
+        widget=forms.NumberInput(attrs={"class": "input input-bordered w-full", "step": "any"}),
+    )
+    max_n_steps = forms.IntegerField(
+        label=_("Throat area max steps"),
+        required=False,
+        min_value=1,
+        widget=forms.NumberInput(attrs={"class": "input input-bordered w-full", "placeholder": "Unlimited"}),
+    )
+
+    # parallel fields
+    workers = forms.IntegerField(
+        label=_("Workers (cores)"),
+        required=False,
+        min_value=1,
+        widget=forms.NumberInput(attrs={"class": "input input-bordered w-full", "placeholder": "All available"}),
+    )
+    divs = forms.CharField(
+        label=_("Chunk divisions per axis"),
+        required=False,
+        initial="2,2,2",
+        help_text=_("Comma-separated values, for example 2,2,1"),
+        widget=forms.TextInput(attrs={"class": "input input-bordered w-full"}),
+    )
+    overlap = forms.IntegerField(
+        label=_("Chunk overlap (voxels)"),
+        required=False,
+        min_value=0,
+        widget=forms.NumberInput(attrs={"class": "input input-bordered w-full", "placeholder": "Auto"}),
+    )
+
+    def __init__(self, team, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["image"].queryset = UploadedImage.objects.filter(team=team).order_by("-created_at")
+
+    def _parse_divs(self, raw_divs: str):
+        if not raw_divs:
+            return None
+        pieces = [piece.strip() for piece in raw_divs.split(",") if piece.strip()]
+        if not pieces:
+            return None
+        try:
+            parsed = [int(piece) for piece in pieces]
+        except ValueError as exc:
+            raise forms.ValidationError(_("Chunk divisions must be integers separated by commas.")) from exc
+        if any(value < 1 for value in parsed):
+            raise forms.ValidationError(_("Chunk divisions must all be at least 1."))
+        return parsed
+
+    def clean(self):
+        cleaned = super().clean()
+        method = cleaned.get("method")
+        backend = cleaned.get("backend")
+        image = cleaned.get("image")
+
+        # Parallel settings are required only for parallel backend
+        if backend == "parallel":
+            if cleaned.get("divs") in (None, ""):
+                self.add_error("divs", _("Chunk divisions are required for parallel backend."))
+            if cleaned.get("workers") in (None, ""):
+                self.add_error("workers", _("Workers are required for parallel backend."))
+
+            raw_divs = cleaned.get("divs")
+            if raw_divs:
+                parsed_divs = self._parse_divs(raw_divs)
+                cleaned["divs_parsed"] = parsed_divs
+                if image and parsed_divs and len(parsed_divs) != len(image.dimensions):
+                    self.add_error(
+                        "divs",
+                        _("Chunk divisions must have %(count)s values for this image.")
+                        % {"count": len(image.dimensions)},
+                    )
+
+        # throat area inputs are required only if throat area is enabled
+        if method == "magnet" and cleaned.get("throat_area"):
+            if cleaned.get("n_walkers") in (None, ""):
+                self.add_error("n_walkers", _("Number of walkers is required when throat area is enabled."))
+            if cleaned.get("step_size") in (None, ""):
+                self.add_error("step_size", _("Step size is required when throat area is enabled."))
+
+        return cleaned
+
+    def to_parameters(self):
+        method = self.cleaned_data["method"]
+        backend = self.cleaned_data["backend"]
+        params = {
+            "method": method,
+            "backend": backend,
+        }
+
+        if method == "snow2":
+            params.update(
+                {
+                    "boundary_width": self.cleaned_data["boundary_width"],
+                    "accuracy": self.cleaned_data["accuracy"],
+                    "sigma": self.cleaned_data["sigma"],
+                    "r_max": self.cleaned_data["r_max"],
+                }
+            )
+        else:
+            params.update(
+                {
+                    "surface": self.cleaned_data["surface"],
+                    "s": self.cleaned_data.get("s"),
+                    "l_max": self.cleaned_data["l_max"],
+                    "throat_junctions": self.cleaned_data.get("throat_junctions") or None,
+                    "throat_area": self.cleaned_data.get("throat_area", False),
+                }
+            )
+            if self.cleaned_data.get("throat_area"):
+                params.update(
+                    {
+                        "n_walkers": self.cleaned_data.get("n_walkers"),
+                        "step_size": self.cleaned_data.get("step_size"),
+                        "max_n_steps": self.cleaned_data.get("max_n_steps"),
+                    }
+                )
+
+        if backend == "parallel":
+            params["parallel_kw"] = {
+                "cores": self.cleaned_data.get("workers"),
+                "divs": self.cleaned_data.get("divs_parsed") or self._parse_divs(self.cleaned_data.get("divs", "")),
+                "overlap": self.cleaned_data.get("overlap"),
+            }
+        else:
+            params["parallel_kw"] = None
+
+        return params
         

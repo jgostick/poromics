@@ -1,10 +1,13 @@
-import os
 import logging
+import os
+
+import numpy as np
 from celery import shared_task
 from celery.signals import worker_process_init
-from django.utils import timezone
+from django.core.files.base import ContentFile
 from django.db import transaction
-import numpy as np
+from django.utils import timezone
+
 from .models import AnalysisJob, AnalysisResult, JobStatus
 
 log = logging.getLogger(__name__)
@@ -193,6 +196,77 @@ def run_poresize_job(self, job_id):
 
     except Exception as exc:
         log.exception("Pore-size job %s failed", job_id)
+        job.status = JobStatus.FAILED
+        job.completed_at = timezone.now()
+        job.error_message = str(exc)
+        job.save(update_fields=["status", "completed_at", "error_message", "updated_at"])
+        raise
+
+
+@shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 1})
+def run_network_extraction_job(self, job_id):
+    """Execute pore-network extraction using porespy snow2 or magnet."""
+    job = AnalysisJob.objects.select_related("image").get(id=job_id)
+
+    job.status = JobStatus.PROCESSING
+    job.started_at = timezone.now()
+    job.progress_percentage = 5
+    job.error_message = ""
+    job.save(update_fields=["status", "started_at", "progress_percentage", "error_message", "updated_at"])
+
+    try:
+        with job.image.file.open("rb") as f:
+            arr = np.load(f, allow_pickle=False)
+
+        job.progress_percentage = 20
+        job.save(update_fields=["progress_percentage", "updated_at"])
+
+        from .analysis.network_extraction import run_network_extraction, serialize_network_payload
+
+        output = run_network_extraction(
+            image_array=arr,
+            params=job.parameters or {},
+            voxel_size=float(job.image.voxel_size or 1.0),
+        )
+        network = output["network"]
+        method = output["method"]
+
+        pore_coords = network.get("pore.coords")
+        throat_conns = network.get("throat.conns")
+        pore_count = int(len(pore_coords)) if pore_coords is not None else 0
+        throat_count = int(len(throat_conns)) if throat_conns is not None else 0
+
+        payload_bytes = serialize_network_payload(output)
+        artifact_name = f"network_{job.id}.json"
+
+        job.progress_percentage = 90
+        job.save(update_fields=["progress_percentage", "updated_at"])
+
+        with transaction.atomic():
+            result, _ = AnalysisResult.objects.update_or_create(
+                job=job,
+                defaults={
+                    "metrics": {
+                        "solution": {
+                            "method": method,
+                            "backend": (job.parameters or {}).get("backend"),
+                            "pore_count": pore_count,
+                            "throat_count": throat_count,
+                        }
+                    },
+                },
+            )
+            result.network_file.save(artifact_name, ContentFile(payload_bytes), save=True)
+
+            job.status = JobStatus.COMPLETED
+            job.completed_at = timezone.now()
+            job.progress_percentage = 100
+            job.save(update_fields=["status", "completed_at", "progress_percentage", "updated_at"])
+
+        return {"job_id": str(job.id), "status": "completed"}
+
+    except Exception as exc:
+        log.exception("Network extraction job %s failed", job_id)
         job.status = JobStatus.FAILED
         job.completed_at = timezone.now()
         job.error_message = str(exc)

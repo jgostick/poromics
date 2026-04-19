@@ -25,6 +25,11 @@ JULIA_QUEUE_MAP = {
     "cuda": "julia-cuda",
 }
 
+NETWORK_EXTRACTION_QUEUE_MAP = {
+    "cpu": "network-cpu",
+    "parallel": "network-parallel",
+}
+
 
 def _celery_queue_ready(queue_name: str, timeout: float = 1.5) -> tuple[bool, str]:
     """

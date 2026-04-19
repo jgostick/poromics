@@ -25,6 +25,7 @@ team_urlpatterns = (
         path('credits/', views.credit_dashboard, name='credit_dashboard'),
         path("analysis/permeability/", views.permeability_launch, name="permeability_launch"),
         path("analysis/diffusivity/", views.diffusivity_launch, name="diffusivity_launch"),
+        path("network-extraction/", views.network_extraction_launch, name="network_extraction_launch"),
         path("trim-image/", views.trim_image, name="trim_image"),
         path("trim-image/load-image/", views.trim_image_load_image, name="trim_image_load_image"),
         path("trim-image/preview/", views.trim_image_preview, name="trim_image_preview"),

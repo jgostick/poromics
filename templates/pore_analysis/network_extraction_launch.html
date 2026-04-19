@@ -1,0 +1,131 @@
+{% extends "pore_analysis/analysis_launch_base.html" %}
+{% load i18n %}
+
+{% block launch_title %}{% translate "Network Extraction" %}{% endblock %}
+{% block launch_heading %}{% translate "Launch Network Extraction Job" %}{% endblock %}
+{% block launch_description %}
+  {% translate "Select an image, choose SNOW2 or MAGNET, and configure CPU or Dask-parallel execution." %}
+{% endblock %}
+
+{% block launch_help %}
+  <p class="text-base-content/70 mt-2">{% translate "To start Celery queues, use:" %}</p>
+  <p class="text-base-content/70 mt-2">{% translate "uv run celery -A poromics worker -Q network-cpu -n network-cpu@%h --pool=solo -l INFO" %}</p>
+  <p class="text-base-content/70 mt-2">{% translate "uv run celery -A poromics worker -Q network-parallel -n network-parallel@%h --pool=solo -l INFO" %}</p>
+{% endblock %}
+
+{% block launch_form_fields %}
+  {% include "pore_analysis/components/form_field.html" with field=form.image %}
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    {% include "pore_analysis/components/form_field.html" with field=form.method %}
+    {% include "pore_analysis/components/form_field.html" with field=form.backend %}
+  </div>
+
+  <div id="snow2-fields" class="space-y-4">
+    <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/70">{% translate "SNOW2 Options" %}</h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {% include "pore_analysis/components/form_field.html" with field=form.boundary_width %}
+      {% include "pore_analysis/components/form_field.html" with field=form.accuracy %}
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {% include "pore_analysis/components/form_field.html" with field=form.sigma %}
+      {% include "pore_analysis/components/form_field.html" with field=form.r_max %}
+    </div>
+  </div>
+
+  <div id="magnet-fields" class="space-y-4">
+    <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/70">{% translate "MAGNET Options" %}</h3>
+    <label class="label cursor-pointer justify-start gap-3">
+      {{ form.surface }}
+      <span class="label-text">{{ form.surface.label }}</span>
+    </label>
+    {% if form.surface.errors %}
+      <p class="text-error text-sm">{{ form.surface.errors.0 }}</p>
+    {% endif %}
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {% include "pore_analysis/components/form_field.html" with field=form.s %}
+      {% include "pore_analysis/components/form_field.html" with field=form.l_max %}
+    </div>
+
+    {% include "pore_analysis/components/form_field.html" with field=form.throat_junctions %}
+
+    <label class="label cursor-pointer justify-start gap-3">
+      {{ form.throat_area }}
+      <span class="label-text">{{ form.throat_area.label }}</span>
+    </label>
+    {% if form.throat_area.errors %}
+      <p class="text-error text-sm">{{ form.throat_area.errors.0 }}</p>
+    {% endif %}
+
+    <div id="throat-area-fields" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {% include "pore_analysis/components/form_field.html" with field=form.n_walkers %}
+      {% include "pore_analysis/components/form_field.html" with field=form.step_size %}
+      {% include "pore_analysis/components/form_field.html" with field=form.max_n_steps %}
+    </div>
+  </div>
+
+  <div id="parallel-fields" class="space-y-4">
+    <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/70">{% translate "Parallel Options (Dask)" %}</h3>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {% include "pore_analysis/components/form_field.html" with field=form.workers %}
+      {% include "pore_analysis/components/form_field.html" with field=form.divs %}
+      {% include "pore_analysis/components/form_field.html" with field=form.overlap %}
+    </div>
+  </div>
+{% endblock %}
+
+{% block launch_submit_label %}{% translate "Queue Network Extraction Job" %}{% endblock %}
+
+{% block page_js %}
+<script>
+  (function () {
+    const methodSelect = document.getElementById('id_method');
+    const backendSelect = document.getElementById('id_backend');
+    const throatAreaCheckbox = document.getElementById('id_throat_area');
+
+    const snow2Fields = document.getElementById('snow2-fields');
+    const magnetFields = document.getElementById('magnet-fields');
+    const parallelFields = document.getElementById('parallel-fields');
+    const throatAreaFields = document.getElementById('throat-area-fields');
+
+    function setVisibility(element, show) {
+      if (!element) {
+        return;
+      }
+      element.style.display = show ? '' : 'none';
+    }
+
+    function updateMethodVisibility() {
+      const method = methodSelect ? methodSelect.value : 'snow2';
+      setVisibility(snow2Fields, method === 'snow2');
+      setVisibility(magnetFields, method === 'magnet');
+      updateThroatAreaVisibility();
+    }
+
+    function updateBackendVisibility() {
+      const backend = backendSelect ? backendSelect.value : 'cpu';
+      setVisibility(parallelFields, backend === 'parallel');
+    }
+
+    function updateThroatAreaVisibility() {
+      const method = methodSelect ? methodSelect.value : 'snow2';
+      const enabled = throatAreaCheckbox ? throatAreaCheckbox.checked : false;
+      setVisibility(throatAreaFields, method === 'magnet' && enabled);
+    }
+
+    if (methodSelect) {
+      methodSelect.addEventListener('change', updateMethodVisibility);
+    }
+    if (backendSelect) {
+      backendSelect.addEventListener('change', updateBackendVisibility);
+    }
+    if (throatAreaCheckbox) {
+      throatAreaCheckbox.addEventListener('change', updateThroatAreaVisibility);
+    }
+
+    updateMethodVisibility();
+    updateBackendVisibility();
+  })();
+</script>
+{% endblock %}
