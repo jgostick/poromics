@@ -103,11 +103,25 @@ def image_detail(request, team_slug, image_id):
     image = get_object_or_404(UploadedImage, id=image_id, team=request.team)
     analysis_jobs = image.analysis_jobs.all().order_by('-created_at')
     
+    dims = image.dimensions
+    max_x = dims[0]
+    max_y = dims[1]
+    max_z = dims[2] if len(dims) > 2 else 1
+
     context = {
         'image': image,
         'analysis_jobs': analysis_jobs,
         'analysis_types': AnalysisType.choices,
         'team_slug': team_slug,
+        'orthoslice': {
+            'max_x': max_x,
+            'max_y': max_y,
+            'max_z': max_z,
+            'mid_x': max_x // 2,
+            'mid_y': max_y // 2,
+            'mid_z': max_z // 2,
+            'is_3d': len(dims) == 3,
+        },
     }
     context.update(get_pore_analysis_context(request))
     return render(request, 'pore_analysis/image_detail.html', context)
@@ -308,3 +322,114 @@ def upload_image(request, team_slug):
     # GET request - show upload form
     context = get_pore_analysis_context(request)
     return render(request, 'pore_analysis/upload_image.html', context)
+
+
+def _render_orthoslice(request, image, x_idx, y_idx, z_idx, zoom_factor=1.2):
+    """Render orthogonal slice planes in a 3D scene (server-side)."""
+    import base64
+    from io import BytesIO
+
+    from PIL import Image
+    import pyvista as pv
+
+    # Memory-map for large files; fall back to regular load for cloud storage.
+    try:
+        arr = np.load(image.file.path, mmap_mode='r', allow_pickle=False)
+    except (NotImplementedError, AttributeError):
+        with image.file.open('rb') as f:
+            arr = np.load(f, allow_pickle=False)
+
+    is_2d = arr.ndim == 2
+
+    if is_2d:
+        data = np.asarray(arr, dtype=np.uint8)
+        step = max(1, max(data.shape) // 512)
+        data = data[::step, ::step]
+        rgb = np.repeat((data * 255)[:, :, np.newaxis], 3, axis=2)
+        image_array = rgb
+        summary_text = _("2D slice preview")
+        preview_caption = _("Orthoslice — 2D")
+    else:
+        max_x, max_y, max_z = arr.shape
+        x_idx = max(0, min(int(x_idx), max_x - 1))
+        y_idx = max(0, min(int(y_idx), max_y - 1))
+        z_idx = max(0, min(int(z_idx), max_z - 1))
+        zoom_factor = max(0.8, min(float(zoom_factor), 3.0))
+
+        # Downsample large volumes before 3D rendering to keep response latency low.
+        step = max(1, max(max_x, max_y, max_z) // 180)
+        volume = np.asarray(arr[::step, ::step, ::step], dtype=np.uint8)
+
+        x_small = max(0, min(x_idx // step, volume.shape[0] - 1))
+        y_small = max(0, min(y_idx // step, volume.shape[1] - 1))
+        z_small = max(0, min(z_idx // step, volume.shape[2] - 1))
+
+        grid = pv.ImageData(dimensions=volume.shape)
+        grid.point_data["InsideMesh"] = volume.ravel(order="F")
+        slices = grid.slice_orthogonal(x=x_small, y=y_small, z=z_small)
+
+        plotter = pv.Plotter(off_screen=True, window_size=(1400, 760))
+        plotter.set_background("white")
+        plotter.add_mesh(
+            slices,
+            scalars="InsideMesh",
+            cmap="viridis",
+            show_scalar_bar=False,
+            lighting=False,
+            clim=[0, 1],
+        )
+        plotter.camera_position = "iso"
+        plotter.camera.zoom(zoom_factor)
+        image_array = plotter.screenshot(return_img=True)
+        plotter.close()
+
+        summary_text = _("3D orthogonal slices — X={}, Y={}, Z={} (downsample step={}, zoom={:.1f}x)").format(
+            x_idx,
+            y_idx,
+            z_idx,
+            step,
+            zoom_factor,
+        )
+        preview_caption = _("Orthoslice — X={}, Y={}, Z={}").format(x_idx, y_idx, z_idx)
+
+    buffer = BytesIO()
+    Image.fromarray(image_array).save(buffer, format="PNG")
+    preview_b64 = base64.b64encode(buffer.getvalue()).decode("ascii")
+
+    return render(
+        request,
+        "pore_analysis/components/tool_preview.html",
+        {
+            "preview_b64": preview_b64,
+            "state": "original",
+            "preview_caption": preview_caption,
+            "badge_label": _("Preview"),
+            "badge_class": "badge-info",
+            "summary_text": summary_text,
+            "preview_max_height_class": "max-h-[760px]",
+            "show_save_controls": False,
+        },
+    )
+
+
+@login_and_team_required
+def orthoslice_preview(request, team_slug, image_id):
+    """HTMX endpoint: returns a rendered orthoslice panel for the given image and indices."""
+    if request.method != "POST":
+        return redirect("pore_analysis_team:image_detail", team_slug=team_slug, image_id=image_id)
+
+    image = get_object_or_404(UploadedImage, id=image_id, team=request.team)
+    dims = image.dimensions
+    max_x = dims[0]
+    max_y = dims[1]
+    max_z = dims[2] if len(dims) > 2 else 1
+
+    x_idx = max(0, min(int(request.POST.get("x_idx", max_x // 2)), max_x - 1))
+    y_idx = max(0, min(int(request.POST.get("y_idx", max_y // 2)), max_y - 1))
+    z_idx = max(0, min(int(request.POST.get("z_idx", max_z // 2)), max_z - 1))
+    try:
+        zoom_factor = float(request.POST.get("zoom", "1.2"))
+    except ValueError:
+        zoom_factor = 1.2
+
+    return _render_orthoslice(request, image, x_idx, y_idx, z_idx, zoom_factor=zoom_factor)

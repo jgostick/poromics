@@ -71,6 +71,77 @@
         </div>
       </div>
 
+      <!-- Orthoslice Viewer -->
+      <div class="bg-white rounded-lg shadow-md p-6 mt-6"
+           x-data="orthosliceViewer(
+             {{ orthoslice.max_x }},
+             {{ orthoslice.max_y }},
+             {{ orthoslice.max_z }},
+             '{% url "pore_analysis_team:orthoslice_preview" team_slug image.id %}'
+           )">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xl font-semibold">{% translate "Slice Viewer" %}</h2>
+          <span class="text-xs text-gray-400">
+            {% if orthoslice.is_3d %}
+              {{ orthoslice.max_x }}&thinsp;&times;&thinsp;{{ orthoslice.max_y }}&thinsp;&times;&thinsp;{{ orthoslice.max_z }}
+            {% else %}
+              {{ orthoslice.max_x }}&thinsp;&times;&thinsp;{{ orthoslice.max_y }}
+            {% endif %}
+          </span>
+        </div>
+
+        {% if orthoslice.is_3d %}
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-4">
+          <div>
+            <label class="flex justify-between text-sm font-medium text-gray-700 mb-1">
+              <span>{% translate "X slice" %}</span>
+              <span class="font-mono" x-text="xIdx"></span>
+            </label>
+            <input type="range" min="0" :max="maxX - 1" step="1"
+                   class="range range-xs w-full"
+                   x-model.number="xIdx"
+                   @input="queueUpdate()">
+          </div>
+          <div>
+            <label class="flex justify-between text-sm font-medium text-gray-700 mb-1">
+              <span>{% translate "Y slice" %}</span>
+              <span class="font-mono" x-text="yIdx"></span>
+            </label>
+            <input type="range" min="0" :max="maxY - 1" step="1"
+                   class="range range-xs w-full"
+                   x-model.number="yIdx"
+                   @input="queueUpdate()">
+          </div>
+          <div>
+            <label class="flex justify-between text-sm font-medium text-gray-700 mb-1">
+              <span>{% translate "Z slice" %}</span>
+              <span class="font-mono" x-text="zIdx"></span>
+            </label>
+            <input type="range" min="0" :max="maxZ - 1" step="1"
+                   class="range range-xs w-full"
+                   x-model.number="zIdx"
+                   @input="queueUpdate()">
+          </div>
+          <div>
+            <label class="flex justify-between text-sm font-medium text-gray-700 mb-1">
+              <span>{% translate "Zoom" %}</span>
+              <span class="font-mono" x-text="zoomFactor.toFixed(1) + 'x'"></span>
+            </label>
+            <input type="range" min="0.8" max="3.0" step="0.1"
+                   class="range range-xs w-full"
+                   x-model.number="zoomFactor"
+                   @input="queueUpdate()">
+          </div>
+        </div>
+        {% endif %}
+
+        <div id="orthoslice-panel">
+          <div class="flex justify-center items-center h-40 text-gray-400">
+            <span class="loading loading-spinner loading-lg"></span>
+          </div>
+        </div>
+      </div>
+
       <!-- Analysis Jobs -->
       <div class="bg-white rounded-lg shadow-md p-6 mt-6">
         <h2 class="text-xl font-semibold mb-4">{% translate "Analysis History" %}</h2>
@@ -167,3 +238,41 @@
   </div>
 </div>
 {% endblock %}
+
+{% block page_js %}
+  <script>
+    window.orthosliceViewer = function(maxX, maxY, maxZ, previewUrl) {
+      return {
+        xIdx: Math.floor(maxX / 2),
+        yIdx: Math.floor(maxY / 2),
+        zIdx: Math.floor(maxZ / 2),
+        zoomFactor: 1.2,
+        maxX,
+        maxY,
+        maxZ,
+        _debounce: null,
+
+        init() {
+          this.updateSlices();
+        },
+
+        queueUpdate() {
+          clearTimeout(this._debounce);
+          this._debounce = setTimeout(() => this.updateSlices(), 200);
+        },
+
+        updateSlices() {
+          htmx.ajax('POST', previewUrl, {
+            target: '#orthoslice-panel',
+            values: {
+              x_idx: this.xIdx,
+              y_idx: this.yIdx,
+              z_idx: this.zIdx,
+              zoom: this.zoomFactor,
+            },
+          });
+        },
+      };
+    };
+  </script>
+{% endblock page_js %}

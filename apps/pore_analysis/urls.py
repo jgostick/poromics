@@ -29,6 +29,7 @@ team_urlpatterns = (
         path("trim-image/load-image/", views.trim_image_load_image, name="trim_image_load_image"),
         path("trim-image/preview/", views.trim_image_preview, name="trim_image_preview"),
         path("analysis/poresize/", views.pore_size_launch, name="poresize_launch"),
+        path("images/<uuid:image_id>/orthoslice/", views.orthoslice_preview, name="orthoslice_preview"),
     ],
     "pore_analysis_team",
 )

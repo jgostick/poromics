@@ -39,7 +39,7 @@
             <div class="w-full overflow-x-auto">{{ plot_html|safe }}</div>
           {% else %}
             <img src="data:image/png;base64,{{ preview_b64 }}"
-                 class="max-w-full max-h-[500px] object-contain rounded"
+                 class="max-w-full {% if preview_max_height_class %}{{ preview_max_height_class }}{% else %}max-h-[500px]{% endif %} object-contain rounded"
                  alt="{% translate "Image slice preview" %}">
           {% endif %}
         </div>
