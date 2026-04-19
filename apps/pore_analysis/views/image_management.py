@@ -114,6 +114,38 @@ def image_detail(request, team_slug, image_id):
 
 
 @login_and_team_required
+def update_voxel_size(request, team_slug, image_id):
+    """Update the voxel size of an uploaded image (HTMX endpoint)."""
+    if request.method != "POST":
+        return redirect("pore_analysis_team:image_detail", team_slug=team_slug, image_id=image_id)
+
+    image = get_object_or_404(UploadedImage, id=image_id, team=request.team)
+    raw = request.POST.get("voxel_size", "").strip()
+
+    error = None
+    if raw == "" or raw is None:
+        image.voxel_size = None
+        image.save(update_fields=["voxel_size", "updated_at"])
+    else:
+        try:
+            value = float(raw)
+            if value <= 0:
+                error = _("Voxel size must be a positive number.")
+            else:
+                image.voxel_size = value
+                image.save(update_fields=["voxel_size", "updated_at"])
+        except ValueError:
+            error = _("Enter a valid number.")
+
+    context = {
+        "image": image,
+        "team_slug": team_slug,
+        "voxel_size_error": error,
+    }
+    return render(request, "pore_analysis/components/voxel_size_field.html", context)
+
+
+@login_and_team_required
 def delete_image(request, team_slug, image_id):
     """Delete an uploaded image and its stored files."""
     if request.method != "POST":

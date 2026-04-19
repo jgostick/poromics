@@ -1,0 +1,41 @@
+{% load i18n %}
+{# HTMX partial: inline voxel-size display / edit for the image detail page. #}
+<div id="voxel-size-field" x-data="{ editing: {% if voxel_size_error %}true{% else %}false{% endif %} }">
+
+  {# ---- Read-only view ---- #}
+  <div x-show="!editing" class="flex items-center gap-2">
+    {% if image.voxel_size %}
+      <span class="text-gray-900">{{ image.voxel_size }} µm</span>
+    {% else %}
+      <span class="text-gray-400 italic">{% translate "Not set" %}</span>
+    {% endif %}
+    <button type="button"
+            @click="editing = true"
+            class="btn btn-xs btn-ghost">
+      {% translate "Edit" %}
+    </button>
+  </div>
+
+  {# ---- Edit form ---- #}
+  <form x-show="editing"
+        hx-post="{% url 'pore_analysis_team:update_voxel_size' team_slug image.id %}"
+        hx-target="#voxel-size-field"
+        hx-swap="outerHTML"
+        class="flex items-center gap-2">
+    {% csrf_token %}
+    <input type="number"
+           name="voxel_size"
+           value="{{ image.voxel_size|default:'' }}"
+           step="any"
+           min="0"
+           placeholder="e.g. 1.5"
+           class="input input-bordered input-sm w-32">
+    <span class="text-sm text-base-content/70">µm</span>
+    <button type="submit" class="btn btn-sm btn-primary">{% translate "Save" %}</button>
+    <button type="button" @click="editing = false" class="btn btn-sm btn-ghost">{% translate "Cancel" %}</button>
+    {% if voxel_size_error %}
+      <span class="text-error text-sm">{{ voxel_size_error }}</span>
+    {% endif %}
+  </form>
+
+</div>

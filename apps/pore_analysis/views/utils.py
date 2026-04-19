@@ -6,19 +6,23 @@ from apps.pore_analysis.models import AnalysisJob, AnalysisType, CreditTransacti
 from apps.pore_analysis.tasks import run_permeability_job  # add to imports at top of file
 from apps.teams.decorators import login_and_team_required
 
-BACKEND_QUEUE_MAP = {  # add near top of file, outside the view function
-    'cpu': 'kabs-cpu',
-    'gpu': 'kabs-gpu',
-    'metal': 'kabs-metal',
-    'cuda': 'kabs-cuda',
-    'opengl': 'kabs-opengl',
+TAICHI_QUEUE_MAP = {
+    "cpu": "kabs-cpu",
+    "gpu": "kabs-gpu",
+    "metal": "kabs-metal",
+    "cuda": "kabs-cuda",
+    "opengl": "kabs-opengl",
+}
+
+BASIC_CPU_QUEUE_MAP = {
+    "cpu": "basic-cpu",
 }
 
 JULIA_QUEUE_MAP = {
-    'cpu': 'julia-cpu',
-    'gpu': 'julia-gpu',
-    'metal': 'julia-metal',
-    'cuda': 'julia-cuda',
+    "cpu": "julia-cpu",
+    "gpu": "julia-gpu",
+    "metal": "julia-metal",
+    "cuda": "julia-cuda",
 }
 
 

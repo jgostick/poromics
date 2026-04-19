@@ -18,14 +18,25 @@ def calculate_porosity(image_array):
 
 
 def generate_thumbnail(image_array, axis=0):
-    from skimage.color import gray2rgb
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
     tmp = np.swapaxes(image_array, 0, axis)
-    if np.ndim(image_array) > 2:  # noqa: SIM108
-        thumb = tmp[int(tmp.shape[0]/2), ...]
+    if np.ndim(image_array) > 2:
+        thumb = tmp[int(tmp.shape[0] / 2), ...]
     else:
         thumb = np.copy(image_array)
-    thumb = gray2rgb(thumb)
-    return thumb
+
+    # Normalise to [0, 1] so the colormap spans the full range
+    thumb = thumb.astype(float)
+    lo, hi = thumb.min(), thumb.max()
+    if hi > lo:
+        thumb = (thumb - lo) / (hi - lo)
+
+    cmap = plt.get_cmap("turbo")
+    rgb = cmap(thumb)[..., :3]  # drop alpha, keep RGB as float [0,1]
+    return (rgb * 255).astype(np.uint8)
 
 
 def get_image_metrics(image_array):

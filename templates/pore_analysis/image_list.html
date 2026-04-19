@@ -106,6 +106,15 @@
                 </div>
               {% endif %}
 
+              <div class="flex justify-between items-center text-xs text-base-content/60 mb-1">
+                <span>{% translate "Voxel size" %}</span>
+                {% if image.voxel_size %}
+                  <span class="font-medium text-base-content">{{ image.voxel_size }} µm</span>
+                {% else %}
+                  <span class="italic">{% translate "Not set" %}</span>
+                {% endif %}
+              </div>
+
               <!-- Analysis Status -->
               <div class="card-actions justify-between items-center">
                 <div>
@@ -124,9 +133,9 @@
                 </div>
 
                 <div class="flex gap-2">
-                  <!-- <a href="/a/{{ team_slug }}/pore-analysis/images/{{ image.id }}/" class="btn btn-sm btn-primary">
+                  <a href="{% url 'pore_analysis_team:image_detail' team_slug image.id %}" class="btn btn-sm btn-primary">
                     {% translate "View" %}
-                  </a> -->
+                  </a>
                   {% translate "Delete this image permanently?" as delete_image_confirm_text %}    
                   <form method="post"
                         action="{% url 'pore_analysis_team:delete_image' team_slug image.id %}"

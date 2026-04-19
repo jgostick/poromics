@@ -13,6 +13,7 @@ team_urlpatterns = (
         path('images/<uuid:image_id>/', views.image_detail, name='image_detail'),
         path('images/<uuid:image_id>/analyze/', views.start_analysis, name='start_analysis'),
         path("images/<uuid:image_id>/delete/", views.delete_image, name="delete_image"),
+        path("images/<uuid:image_id>/voxel-size/", views.update_voxel_size, name="update_voxel_size"),
         path("process-image/", views.process_image, name="process_image"),
         path("process-image/load-image/", views.process_image_load_image, name="process_image_load_image"),
         path("process-image/preview/", views.process_image_preview, name="process_image_preview"),
@@ -27,6 +28,7 @@ team_urlpatterns = (
         path("trim-image/", views.trim_image, name="trim_image"),
         path("trim-image/load-image/", views.trim_image_load_image, name="trim_image_load_image"),
         path("trim-image/preview/", views.trim_image_preview, name="trim_image_preview"),
+        path("analysis/poresize/", views.pore_size_launch, name="poresize_launch"),
     ],
     "pore_analysis_team",
 )

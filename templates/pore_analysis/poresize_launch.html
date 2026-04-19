@@ -1,0 +1,26 @@
+{% extends "pore_analysis/analysis_launch_base.html" %}
+{% load i18n %}
+
+{% block launch_title %}{% translate "Pore Size Distribution" %}{% endblock %}
+{% block launch_heading %}{% translate "Launch Pore Size Job" %}{% endblock %}
+{% block launch_description %}{% translate "Determine pore size from the local thickness filter" %}{% endblock %}
+
+{% block launch_help %}
+    <p class="text-base-content/70 mt-2">{% translate "To start celery queues, use:" %}</p>
+    <p class="text-base-content/70 mt-2">{% translate "uv run celery -A poromics worker -Q basic-cpu -n basic-cpu@%h --pool=solo -l INFO" %}</p>
+{% endblock %}
+
+
+{% block launch_form_fields %}
+  {% include "pore_analysis/components/form_field.html" with field=form.image %}
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    {% include "pore_analysis/components/form_field.html" with field=form.sizes %}
+    {% include "pore_analysis/components/form_field.html" with field=form.backend %}
+  </div>
+
+
+{% endblock %}
+
+{% block launch_submit_label %}{% translate "Run Pore Size Job" %}
+{% endblock %}

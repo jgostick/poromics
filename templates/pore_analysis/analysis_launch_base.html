@@ -1,0 +1,40 @@
+{% extends "pore_analysis/base.html" %}
+{% load i18n %}
+
+{% block title %}{% block launch_title %}{% endblock %}{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+  <div class="mb-8">
+    <h1 class="text-3xl font-bold text-base-content">{% block launch_heading %}{% endblock %}</h1>
+    <p class="text-base-content/70 mt-2">{% block launch_description %}{% endblock %}</p>
+    {% block launch_help %}{% endblock %}
+  </div>
+
+  <div class="card bg-base-100 shadow-lg">
+    <div class="card-body">
+      <form method="post" class="space-y-5">
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+          <div class="alert alert-error">
+            {{ form.non_field_errors }}
+          </div>
+        {% endif %}
+
+        {% block launch_form_fields %}
+          {% for field in form %}
+            {% include "pore_analysis/components/form_field.html" with field=field %}
+          {% endfor %}
+        {% endblock %}
+
+        <div class="card-actions justify-end pt-2">
+          <button type="submit" class="btn btn-primary">
+            {% block launch_submit_label %}{% translate "Queue Job" %}{% endblock %}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

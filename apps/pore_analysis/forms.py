@@ -133,6 +133,41 @@ class DiffusivityLaunchForm(forms.Form):
         }
 
 
+class PoreSizeLaunchForm(forms.Form):
+    BACKEND_CHOICES = [
+        ("cpu", _("CPU")),
+    ]
+
+    image = forms.ModelChoiceField(
+        queryset=UploadedImage.objects.none(),
+        label=_("Image"),
+        empty_label=_("Select an image"),
+        widget=forms.Select(attrs={"class": "select select-bordered w-full"}),
+    )
+    sizes = forms.IntegerField(
+        label=_("Histogram bins"),
+        min_value=2,
+        initial=25,
+        widget=forms.NumberInput(attrs={"class": "input input-bordered w-full"}),
+    )
+    backend = forms.ChoiceField(
+        choices=BACKEND_CHOICES,
+        label=_("Backend"),
+        initial="cpu",
+        widget=forms.Select(attrs={"class": "select select-bordered w-full"}),
+    )
+
+    def __init__(self, team, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["image"].queryset = UploadedImage.objects.filter(team=team).order_by("-created_at")
+
+    def to_parameters(self):
+        return {
+            "sizes": self.cleaned_data["sizes"],
+            "backend": self.cleaned_data["backend"],
+        }
+
+
 class TrimImageForm(forms.Form):
     xmin = forms.IntegerField(widget=forms.HiddenInput())
     xmax = forms.IntegerField(widget=forms.HiddenInput())

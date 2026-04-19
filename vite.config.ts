@@ -31,6 +31,7 @@ export default defineConfig({
         'pegasus': path.resolve(__dirname, './assets/javascript/pegasus/pegasus.js'),
         'react-object-lifecycle': path.resolve(__dirname, './assets/javascript/pegasus/examples/react/react-object-lifecycle.jsx'),
         'vue-object-lifecycle': path.resolve(__dirname, './assets/javascript/pegasus/examples/vue/vue-object-lifecycle.js'),
+        'pore-analysis-job-detail': path.resolve(__dirname, './assets/javascript/pore_analysis/job-detail-charts.js'),
       },
       output: {
         // Output JS bundles to js/ directory with -bundle suffix

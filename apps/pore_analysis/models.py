@@ -112,7 +112,7 @@ class UploadedImage(BaseTeamModel):
             # Create matplotlib figure
             logger.info("Creating matplotlib figure")
             fig, ax = plt.subplots(figsize=(4, 4), dpi=100)
-            ax.imshow(xray_img, cmap='gray')
+            ax.imshow(xray_img, cmap='turbo')
             ax.axis('off')
             plt.tight_layout(pad=0)
             
@@ -184,6 +184,7 @@ class AnalysisType(models.TextChoices):
     DIFFUSIVITY = 'diffusivity', _('Diffusivity Calculation')
     MORPHOLOGY = 'morphology', _('Morphological Analysis')
     VISUALIZATION = 'visualization', _('3D Visualization')
+    PORESIZE = 'poresize', _('Pore Size Distribution')
     FULL_SUITE = 'full_suite', _('Complete Analysis Suite')
 
 

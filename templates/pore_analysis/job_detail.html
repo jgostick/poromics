@@ -1,5 +1,6 @@
 {% extends "pore_analysis/base.html" %}
 {% load i18n %}
+{% load django_vite %}
 
 {% block title %}{% translate "Job Details" %}{% endblock %}
 
@@ -60,9 +61,38 @@
 
       {% if job.result %}
       <div class="divider">{% translate "Result" %}</div>
-      <pre class="bg-base-200 p-4 rounded overflow-x-auto text-xs">{{ job.result.metrics|pprint }}</pre>
+
+      {% if job.analysis_type == 'poresize' and job.result.metrics.solution %}
+      <div class="mt-4">
+        <h3 class="text-sm font-semibold mb-2">{% translate "Pore Size Distribution" %}</h3>
+        <canvas id="poresize-histogram"></canvas>
+      </div>
+      {% endif %}
+
+      <details class="mt-4">
+        <summary class="cursor-pointer text-sm text-base-content/70 hover:text-base-content">
+          {% translate "Raw result data" %}
+        </summary>
+        <pre class="bg-base-200 p-4 rounded overflow-x-auto text-xs mt-2">{{ job.result.metrics|pprint }}</pre>
+      </details>
       {% endif %}
     </div>
   </div>
 </div>
 {% endblock %}
+
+{% block page_js %}
+{% if job.analysis_type == 'poresize' and job.result and job.result.metrics.solution %}
+{{ job.result.metrics.solution|json_script:"poresize-data" }}
+{% vite_asset 'assets/javascript/pore_analysis/job-detail-charts.js' %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const data = JSON.parse(document.getElementById('poresize-data').textContent);
+    const canvas = document.getElementById('poresize-histogram');
+    if (canvas && data.counts && data.bin_edges) {
+      SiteJS.PoreAnalysis.poreSizeHistogram(canvas, data.counts, data.bin_edges, data.voxel_size || 1.0);
+    }
+  });
+</script>
+{% endif %}
+{% endblock page_js %}
