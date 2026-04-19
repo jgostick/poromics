@@ -50,6 +50,13 @@
             <span>{% translate "Trimming" %}</span>
           </a>
         </li>
+        <li>
+          <a href="/a/{{ team_slug }}/pore-analysis/adjust-values/"
+             class="flex items-center gap-3 {% if request.resolver_match.url_name == 'adjust_values' %}active{% endif %}">
+            <i class="fa fa-sliders w-4 text-center"></i>
+            <span>{% translate "Adjust Values" %}</span>
+          </a>
+        </li>
       </ul>
     </div>
 

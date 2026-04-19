@@ -12,12 +12,27 @@
         <h1 class="text-3xl font-bold text-base-content">{% translate "Uploaded Images" %}</h1>
         <p class="text-base-content/70 mt-2">{% translate "Manage your volumetric image library" %}</p>
       </div>
-      <a href="/a/{{ team_slug }}/pore-analysis/upload/" class="btn btn-primary">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-        </svg>
-        {% translate "Upload New Image" %}
-      </a>
+      <div class="flex items-center gap-2">
+        {% translate "Recompute metrics for all images and regenerate missing thumbnails?" as refresh_confirm_text %}
+        <form method="post"
+              action="{% url 'pore_analysis_team:refresh_image_metrics' team_slug %}"
+              onsubmit="return confirm('{{ refresh_confirm_text|escapejs }}');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-outline">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992V4.356m-.015 4.992A9 9 0 1 0 6.5 18.5M3 3v5h5" />
+            </svg>
+            {% translate "Refresh" %}
+          </button>
+        </form>
+
+        <a href="/a/{{ team_slug }}/pore-analysis/upload/" class="btn btn-primary">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+          </svg>
+          {% translate "Upload New Image" %}
+        </a>
+      </div>
     </div>
   </div>
 
@@ -61,8 +76,33 @@
               </div>
 
               {% if image.metrics %}
-                <div class="badge badge-info badge-sm">
-                  Porosity: {{ image.metrics.porosity|floatformat:1 }}%
+                <div class="rounded-lg border border-base-300 bg-base-200/40 p-3 mb-3">
+                  <div class="space-y-1 text-sm">
+                    {% if image.metrics.porosity is not None %}
+                      <div class="flex justify-between">
+                        <span class="text-base-content/70">{% translate "Porosity" %}</span>
+                        <span class="font-medium">{{ image.metrics.porosity|floatformat:3 }}</span>
+                      </div>
+                    {% endif %}
+                    {% if image.metrics.shape %}
+                      <div class="flex justify-between">
+                        <span class="text-base-content/70">{% translate "Shape" %}</span>
+                        <span class="font-medium">{{ image.metrics.shape|join:" × " }}</span>
+                      </div>
+                    {% endif %}
+                    {% if image.metrics.data_type %}
+                      <div class="flex justify-between">
+                        <span class="text-base-content/70">{% translate "Data Type" %}</span>
+                        <span class="font-medium">{{ image.metrics.data_type }}</span>
+                      </div>
+                    {% endif %}
+                    {% if image.metrics.range %}
+                      <div class="flex justify-between">
+                        <span class="text-base-content/70">{% translate "Range" %}</span>
+                        <span class="font-medium">{{ image.metrics.range|join:" - " }}</span>
+                      </div>
+                    {% endif %}
+                  </div>
                 </div>
               {% endif %}
 
@@ -71,9 +111,10 @@
                 <div>
                   {% with job_count=image.analysis_jobs.count %}
                     {% if job_count > 0 %}
-                      <div class="badge badge-primary badge-sm">
+                      <a href="{% url 'pore_analysis_team:job_list' team_slug %}?image_id={{ image.id }}"
+                         class="badge badge-primary badge-sm hover:badge-primary-focus">
                         {{ job_count }} analysis{% if job_count != 1 %}es{% endif %}
-                      </div>
+                      </a>
                     {% else %}
                       <div class="badge badge-ghost badge-sm">
                         No analyses

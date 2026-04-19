@@ -29,6 +29,75 @@ def image_list(request, team_slug):
 
 
 @login_and_team_required
+def refresh_image_metrics(request, team_slug):
+    """Recompute metrics and regenerate missing thumbnails for team images."""
+    if request.method != "POST":
+        messages.error(request, _("Invalid request method."))
+        return redirect("pore_analysis_team:image_list", team_slug=team_slug)
+
+    images = UploadedImage.objects.filter(team=request.team).order_by("-created_at")
+    metrics_refreshed_count = 0
+    metrics_failed_count = 0
+    thumbnails_regenerated_count = 0
+    thumbnails_failed_count = 0
+
+    for image in images:
+        try:
+            metrics = image.compute_metrics(save=True)
+            if metrics:
+                metrics_refreshed_count += 1
+            else:
+                metrics_failed_count += 1
+        except Exception:
+            metrics_failed_count += 1
+
+        if not image.thumbnail:
+            try:
+                thumbnail_data = image.generate_thumbnail(save=True)
+                if thumbnail_data:
+                    image.save(update_fields=["thumbnail"])
+                    thumbnails_regenerated_count += 1
+                else:
+                    thumbnails_failed_count += 1
+            except Exception:
+                thumbnails_failed_count += 1
+
+    if metrics_refreshed_count:
+        messages.success(
+            request,
+            _("Refreshed metrics for {} image(s).").format(metrics_refreshed_count),
+        )
+
+    if metrics_failed_count:
+        messages.warning(
+            request,
+            _("Failed to refresh metrics for {} image(s).").format(metrics_failed_count),
+        )
+
+    if thumbnails_regenerated_count:
+        messages.success(
+            request,
+            _("Regenerated missing thumbnails for {} image(s).").format(thumbnails_regenerated_count),
+        )
+
+    if thumbnails_failed_count:
+        messages.warning(
+            request,
+            _("Failed to regenerate thumbnails for {} image(s).").format(thumbnails_failed_count),
+        )
+
+    if (
+        not metrics_refreshed_count
+        and not metrics_failed_count
+        and not thumbnails_regenerated_count
+        and not thumbnails_failed_count
+    ):
+        messages.info(request, _("No images found to refresh."))
+
+    return redirect("pore_analysis_team:image_list", team_slug=team_slug)
+
+
+@login_and_team_required
 def image_detail(request, team_slug, image_id):
     """View details of a specific uploaded image."""
     image = get_object_or_404(UploadedImage, id=image_id, team=request.team)

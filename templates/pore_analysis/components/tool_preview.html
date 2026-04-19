@@ -1,0 +1,134 @@
+{% load i18n %}
+
+{% if error %}
+  <div class="card bg-base-100 shadow">
+    <div class="card-body">
+      <div class="alert alert-error">
+        <i class="fa fa-circle-exclamation"></i>
+        <span>{{ error }}</span>
+      </div>
+    </div>
+  </div>
+
+{% else %}
+  <div class="space-y-4">
+
+    <!-- Slice image -->
+    <div class="card bg-base-100 shadow">
+      <div class="card-body">
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-sm text-base-content/60">
+            {% if preview_caption %}
+              {{ preview_caption }}
+            {% elif state == "original" %}
+              {% translate "Original — middle Z-slice" %}
+            {% else %}
+              {% translate "After Apply — middle Z-slice" %}
+            {% endif %}
+          </span>
+          {% if badge_label %}
+            <span class="badge {{ badge_class|default:'badge-ghost' }}">{{ badge_label }}</span>
+          {% elif state == "original" %}
+            <span class="badge badge-ghost">{% translate "Original" %}</span>
+          {% else %}
+            <span class="badge badge-success">{% translate "Processed" %}</span>
+          {% endif %}
+        </div>
+        <div class="flex justify-center">
+          {% if plot_html %}
+            <div class="w-full overflow-x-auto">{{ plot_html|safe }}</div>
+          {% else %}
+            <img src="data:image/png;base64,{{ preview_b64 }}"
+                 class="max-w-full max-h-[500px] object-contain rounded"
+                 alt="{% translate "Image slice preview" %}">
+          {% endif %}
+        </div>
+        {% if summary_text %}
+          <p class="text-sm mt-4">{{ summary_text }}</p>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if show_save_controls or state == "processed" %}
+    <!-- Save controls -->
+    <div class="card bg-base-100 shadow"
+         x-data="{ showSaveModal: false }">
+      <div class="card-body">
+        <h3 class="font-semibold mb-3">{% translate "Save Result" %}</h3>
+        <div class="flex gap-3">
+
+          <!-- Overwrite original -->
+          <form method="post" action="{{ save_url }}" class="flex-1">
+            {% csrf_token %}
+            <input type="hidden" name="save_as"    value="overwrite">
+            <input type="hidden" name="image_id"   value="{{ image_id }}">
+            {% for field_name, field_value in hidden_inputs %}
+              <input type="hidden" name="{{ field_name }}" value="{{ field_value }}">
+            {% endfor %}
+            <button type="submit" class="btn btn-warning w-full">
+              <i class="fa fa-pen-to-square"></i>
+              {% translate "Overwrite" %}
+            </button>
+          </form>
+
+          <!-- Save as new image -->
+          <button type="button"
+                  class="btn btn-success flex-1"
+                  @click="showSaveModal = true">
+            <i class="fa fa-floppy-disk"></i>
+            {% translate "Save New" %}
+          </button>
+
+        </div>
+      </div>
+
+      <!-- Save New modal -->
+      <div x-show="showSaveModal"
+           x-cloak
+           class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+           @keydown.escape.window="showSaveModal = false"
+           @click.self="showSaveModal = false">
+        <div class="bg-base-100 rounded-box shadow-xl w-full max-w-md mx-4 p-6"
+             @click.stop>
+          <h3 class="font-bold text-lg mb-4">{% translate "Save as New Image" %}</h3>
+          <form method="post" action="{{ save_url }}">
+            {% csrf_token %}
+            <input type="hidden" name="save_as"    value="new">
+            <input type="hidden" name="image_id"   value="{{ image_id }}">
+            {% for field_name, field_value in hidden_inputs %}
+              <input type="hidden" name="{{ field_name }}" value="{{ field_value }}">
+            {% endfor %}
+            <div class="form-control mb-4">
+              <label class="label" for="new-image-name">
+                <span class="label-text">{% translate "File name" %}</span>
+              </label>
+              <input id="new-image-name"
+                     type="text"
+                     name="new_name"
+                     class="input input-bordered w-full"
+                     placeholder="{{ suggested_name }}_{{ save_new_suffix|default:'result' }}"
+                     autocomplete="off">
+              <label class="label">
+                <span class="label-text-alt text-base-content/50">
+                  {% translate "The .npy extension will be added automatically if missing." %}
+                </span>
+              </label>
+            </div>
+            <div class="flex gap-2 justify-end">
+              <button type="button" class="btn btn-ghost" @click="showSaveModal = false">
+                {% translate "Cancel" %}
+              </button>
+              <button type="submit" class="btn btn-primary">
+                <i class="fa fa-floppy-disk"></i>
+                {% translate "Save" %}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+    </div>
+    {% endif %}
+
+  </div>
+{% endif %}

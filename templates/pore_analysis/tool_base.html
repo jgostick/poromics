@@ -1,0 +1,86 @@
+{% extends "pore_analysis/base.html" %}
+{% load i18n %}
+
+{% block title %}{% block tool_title %}Tool{% endblock %}{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+
+  <div class="mb-6">
+    <h1 class="text-3xl font-bold text-base-content">{% block tool_heading %}{% endblock %}</h1>
+    <p class="text-base-content/70 mt-1">{% block tool_description %}{% endblock %}</p>
+  </div>
+
+  <div class="grid grid-cols-[360px_1fr] gap-6 items-start">
+
+    <!-- Left column: controls -->
+    <form id="tool-form" class="space-y-4" {% block tool_form_attributes %}{% endblock %}>
+      {% csrf_token %}
+
+      <!-- Image picker -->
+      <div class="card bg-base-100 shadow">
+        <div class="card-body gap-2 pb-4">
+          <label class="label pb-0" for="tool-image-select">
+            <span class="label-text font-semibold text-base">{% translate "Image" %}</span>
+          </label>
+          {% if images %}
+            <select id="tool-image-select"
+                    name="image_id"
+                    class="select select-bordered w-full"
+                    hx-get="{{ load_image_url }}"
+                    hx-trigger="change"
+                    hx-target="#preview-panel"
+                    hx-include="#tool-form">
+              <option value="">{% translate "— select an image —" %}</option>
+              {% for img in images %}
+                <option value="{{ img.id }}">
+                  {{ img.name }}{% if img.metrics.data_type %} ({{ img.metrics.data_type }}){% endif %}
+                </option>
+              {% endfor %}
+            </select>
+          {% else %}
+            <p class="text-sm text-base-content/60">
+              {% translate "No images available. Upload one first." %}
+            </p>
+            <a href="/a/{{ team_slug }}/pore-analysis/upload/" class="btn btn-sm btn-primary mt-1">
+              {% translate "Upload Image" %}
+            </a>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Tool-specific controls — populated via HTMX OOB swap on image change -->
+      <div id="operation-controls">
+        {% block tool_controls %}{% endblock %}
+      </div>
+
+      <!-- Apply -->
+      {% block tool_action_button %}
+        <button type="button"
+                class="btn btn-primary w-full"
+                hx-post="{{ preview_url }}"
+                hx-target="#preview-panel"
+                hx-include="#tool-form">
+          <i class="fa fa-play mr-1"></i>
+          {% translate "Apply" %}
+        </button>
+      {% endblock %}
+
+    </form>
+
+    <!-- Right column: preview panel -->
+    <div id="preview-panel"
+         class="card bg-base-100 shadow min-h-96 flex items-center justify-center">
+      <div class="text-center text-base-content/40 py-20 px-6">
+        <i class="fa fa-image text-5xl mb-4 block"></i>
+        <p class="text-sm">
+          {% translate "Select an image to load a preview, then click Apply to see the result." %}
+        </p>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{% block extra_scripts %}{% endblock %}
+{% endblock %}

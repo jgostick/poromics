@@ -1,0 +1,44 @@
+{% load i18n %}
+
+<div id="operation-controls" hx-swap-oob="true">
+  <div x-data="trimmer('{{ image.id }}', {{ dimensions.0 }}, {{ dimensions.1 }}, {{ dimensions.2 }}, '{{ preview_url }}')"
+       x-init="init()"
+       class="space-y-4">
+    <input type="hidden" name="xmin" :value="xmin" x-bind:value="xmin">
+    <input type="hidden" name="xmax" :value="xmax" x-bind:value="xmax">
+    <input type="hidden" name="ymin" :value="ymin" x-bind:value="ymin">
+    <input type="hidden" name="ymax" :value="ymax" x-bind:value="ymax">
+    <input type="hidden" name="zmin" :value="zmin" x-bind:value="zmin">
+    <input type="hidden" name="zmax" :value="zmax" x-bind:value="zmax">
+
+    <div class="card bg-base-100 shadow">
+      <div class="card-body gap-4">
+        <div>
+          <h3 class="font-semibold">{{ image.name }}</h3>
+          <p class="text-sm text-base-content/60">{% translate "Move the sliders to set the crop bounds." %}</p>
+        </div>
+
+        <div>
+          <label class="label">
+            <span class="label-text">{% translate "X Range" %}: <span x-text="xmin"></span> to <span x-text="xmax"></span></span>
+          </label>
+          <div id="slider-x"></div>
+        </div>
+
+        <div>
+          <label class="label">
+            <span class="label-text">{% translate "Y Range" %}: <span x-text="ymin"></span> to <span x-text="ymax"></span></span>
+          </label>
+          <div id="slider-y"></div>
+        </div>
+
+        <div>
+          <label class="label">
+            <span class="label-text">{% translate "Z Range" %}: <span x-text="zmin"></span> to <span x-text="zmax"></span></span>
+          </label>
+          <div id="slider-z"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

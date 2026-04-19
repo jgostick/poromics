@@ -4,7 +4,10 @@ import numpy as np
 import porespy as ps
 from django.contrib import messages
 from django.core.files.base import ContentFile
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils.translation import gettext as _
 
 from apps.pore_analysis.forms import ImagePickerForm, TrimImageForm
@@ -14,94 +17,130 @@ from apps.teams.decorators import login_and_team_required
 from .utils import get_pore_analysis_context
 
 
+def _load_uploaded_image_array(image) -> np.ndarray:
+    with image.file.open("rb") as f:
+        return np.load(f, allow_pickle=False)
+
+
+def _save_result_image(
+    request,
+    team_slug,
+    image,
+    result: np.ndarray,
+    save_as: str,
+    new_name: str,
+    derived_suffix: str,
+    derived_description: str,
+    overwrite_message: str,
+    new_message: str,
+):
+    buffer = BytesIO()
+    np.save(buffer, result, allow_pickle=False)
+    file_bytes = buffer.getvalue()
+
+    if save_as == "overwrite":
+        storage = image.file.storage
+        original_name = image.file.name
+        storage.delete(original_name)
+        storage.save(original_name, ContentFile(file_bytes))
+        image.file.name = original_name
+        image.file_size = len(file_bytes)
+        image.dimensions = list(result.shape)
+        if image.thumbnail:
+            image.thumbnail.delete(save=False)
+        image.generate_thumbnail(save=True)
+        image.compute_metrics(save=False)
+        image.save()
+        messages.success(request, overwrite_message)
+        return redirect("pore_analysis_team:image_detail", team_slug=team_slug, image_id=image.id)
+
+    name = new_name.strip() or f"{image.name}_{derived_suffix}"
+    if not name.endswith(".npy"):
+        name += ".npy"
+    new_image = UploadedImage.objects.create(
+        team=request.team,
+        uploaded_by=request.user,
+        name=name,
+        description=derived_description.format(name=image.name),
+        file=ContentFile(file_bytes, name=name),
+        file_size=len(file_bytes),
+        dimensions=list(result.shape),
+        voxel_size=image.voxel_size,
+    )
+    new_image.generate_thumbnail(save=True)
+    new_image.compute_metrics(save=False)
+    new_image.save()
+    messages.success(request, new_message.format(name=name))
+    return redirect("pore_analysis_team:image_detail", team_slug=team_slug, image_id=new_image.id)
+
+
 @login_and_team_required
 def trim_image(request, team_slug):
-    """Trim a 3D image by selecting bounds on X/Y/Z axes."""
-    selected_image = None
-    bounds_form = TrimImageForm()
+    """Main trimming page using the shared tool shell."""
+    if request.method == "POST" and request.POST.get("action") == "save":
+        image_id = request.POST.get("image_id")
+        image = get_object_or_404(UploadedImage, id=image_id, team=request.team)
+        arr = _load_uploaded_image_array(image)
 
-    # GET: image picker (dropdown)
-    picker_form = ImagePickerForm(request.team, request.GET or None)
-    if picker_form.is_bound and picker_form.is_valid():
-        selected_image = picker_form.cleaned_data["image"]
+        if arr.ndim == 2:
+            max_x, max_y = arr.shape
+            xmin = max(0, min(int(request.POST.get("xmin", 0)), max_x - 1))
+            xmax = max(xmin + 1, min(int(request.POST.get("xmax", max_x)), max_x))
+            ymin = max(0, min(int(request.POST.get("ymin", 0)), max_y - 1))
+            ymax = max(ymin + 1, min(int(request.POST.get("ymax", max_y)), max_y))
+            trimmed_array = arr[xmin:xmax, ymin:ymax]
+        else:
+            max_x, max_y, max_z = arr.shape
+            xmin = max(0, min(int(request.POST.get("xmin", 0)), max_x - 1))
+            xmax = max(xmin + 1, min(int(request.POST.get("xmax", max_x)), max_x))
+            ymin = max(0, min(int(request.POST.get("ymin", 0)), max_y - 1))
+            ymax = max(ymin + 1, min(int(request.POST.get("ymax", max_y)), max_y))
+            zmin = max(0, min(int(request.POST.get("zmin", 0)), max_z - 1))
+            zmax = max(zmin + 1, min(int(request.POST.get("zmax", max_z)), max_z))
+            trimmed_array = arr[xmin:xmax, ymin:ymax, zmin:zmax]
 
-    # POST: apply trim
-    if request.method == "POST":
-        picker_form = ImagePickerForm(request.team, request.POST)
-        bounds_form = TrimImageForm(request.POST)
-
-        if picker_form.is_valid() and bounds_form.is_valid():
-            selected_image = picker_form.cleaned_data["image"]
-
-            xmin = bounds_form.cleaned_data["xmin"]
-            xmax = bounds_form.cleaned_data["xmax"]
-            ymin = bounds_form.cleaned_data["ymin"]
-            ymax = bounds_form.cleaned_data["ymax"]
-            zmin = bounds_form.cleaned_data["zmin"]
-            zmax = bounds_form.cleaned_data["zmax"]
-
-            with selected_image.file.open("rb") as f:
-                arr = np.load(f, allow_pickle=False)
-
-            if arr.ndim == 2:
-                trimmed_array = arr[xmin:xmax, ymin:ymax]
-            else:
-                trimmed_array = arr[xmin:xmax, ymin:ymax, zmin:zmax]
-
-            # Save trimmed as new image
-            buffer = BytesIO()
-            np.save(buffer, trimmed_array, allow_pickle=False)
-            file_bytes = buffer.getvalue()
-
-            new_name = f"{selected_image.name}_trimmed.npy"
-            uploaded_image = UploadedImage.objects.create(
-                team=request.team,
-                uploaded_by=request.user,
-                name=new_name,
-                description=f"Trimmed from {selected_image.name}",
-                file=ContentFile(file_bytes, name=new_name),
-                file_size=len(file_bytes),
-                dimensions=list(trimmed_array.shape),
-                voxel_size=selected_image.voxel_size,
-            )
-
-            messages.success(request, _("Image trimmed and saved as '{}'.").format(new_name))
-            return redirect("pore_analysis_team:image_detail", team_slug=team_slug, image_id=uploaded_image.id)
+        return _save_result_image(
+            request=request,
+            team_slug=team_slug,
+            image=image,
+            result=trimmed_array,
+            save_as=request.POST.get("save_as", "new"),
+            new_name=request.POST.get("new_name", ""),
+            derived_suffix="trimmed",
+            derived_description=_("Trimmed from {name}"),
+            overwrite_message=_("Image trimmed successfully and overwritten."),
+            new_message=_("New image '{name}' created."),
+        )
 
     context = {
-        "picker_form": picker_form,
-        "bounds_form": bounds_form,
-        "image": selected_image,
+        "images": UploadedImage.objects.filter(team=request.team).order_by("-created_at"),
         "team_slug": team_slug,
+        "load_image_url": reverse("pore_analysis_team:trim_image_load_image", kwargs={"team_slug": team_slug}),
+        "preview_url": reverse("pore_analysis_team:trim_image_preview", kwargs={"team_slug": team_slug}),
     }
     context.update(get_pore_analysis_context(request))
     return render(request, "pore_analysis/trim_image.html", context)
 
 
-@login_and_team_required
-def trim_image_preview(request, team_slug):
-    """AJAX endpoint to preview trim bounds on original slices."""
+def _render_trim_preview(request, image, xmin, xmax, ymin, ymax, zmin, zmax, show_save=False, save_url=""):
+    """Render the trim overlay preview for the selected image and bounds."""
     import plotly.graph_objects as go
     import plotly.io as pio
     from plotly.subplots import make_subplots
 
-    image_id = request.POST.get("image_id")
-    image = get_object_or_404(UploadedImage, id=image_id, team=request.team)
-
-    with image.file.open("rb") as f:
-        arr = np.load(f, allow_pickle=False).astype(np.uint8)
+    arr = _load_uploaded_image_array(image).astype(np.uint8)
 
     if arr.ndim == 2:
         arr = arr[:, :, np.newaxis]
 
     max_x, max_y, max_z = arr.shape
 
-    xmin = max(0, min(int(request.POST.get("xmin", 0)), max_x - 1))
-    xmax = max(xmin + 1, min(int(request.POST.get("xmax", max_x)), max_x))
-    ymin = max(0, min(int(request.POST.get("ymin", 0)), max_y - 1))
-    ymax = max(ymin + 1, min(int(request.POST.get("ymax", max_y)), max_y))
-    zmin = max(0, min(int(request.POST.get("zmin", 0)), max_z - 1))
-    zmax = max(zmin + 1, min(int(request.POST.get("zmax", max_z)), max_z))
+    xmin = max(0, min(int(xmin), max_x - 1))
+    xmax = max(xmin + 1, min(int(xmax), max_x))
+    ymin = max(0, min(int(ymin), max_y - 1))
+    ymax = max(ymin + 1, min(int(ymax), max_y))
+    zmin = max(0, min(int(zmin), max_z - 1))
+    zmax = max(zmin + 1, min(int(zmax), max_z))
 
     x_mid = (xmin + xmax - 1) // 2
     y_mid = (ymin + ymax - 1) // 2
@@ -132,12 +171,17 @@ def trim_image_preview(request, team_slug):
         if z_max <= z_min:
             z_max = z_min + 1.0
 
+        # Keep binary phase rendering explicit: False/solid dark, True/void bright.
+        unique_values = np.unique(z_data)
+        is_binary = unique_values.size <= 2 and np.all(np.isin(unique_values, [0, 1]))
+        colorscale = [[0.0, "#111111"], [1.0, "#f4f4f4"]] if is_binary else "Gray"
+
         fig.add_trace(
             go.Heatmap(
                 z=z_data,
                 x=x_vals,
                 y=y_vals,
-                colorscale="Gray",
+                colorscale=colorscale,
                 zmin=z_min,
                 zmax=z_max,
                 zsmooth=False,
@@ -224,22 +268,269 @@ def trim_image_preview(request, team_slug):
         config={"responsive": False, "displayModeBar": False},
     )
 
+    trimmed_shape = (xmax - xmin, ymax - ymin, zmax - zmin)
     return render(
         request,
-        "pore_analysis/components/trim_preview.html",
+        "pore_analysis/components/tool_preview.html",
         {
             "plot_html": plot_html,
-            "trimmed_shape": (xmax - xmin, ymax - ymin, zmax - zmin),
+            "state": "processed" if show_save else "original",
+            "preview_caption": _("Trim lines preview"),
+            "badge_label": _("Trim"),
+            "badge_class": "badge-info",
+            "summary_text": _("Shape: {}" ).format(trimmed_shape),
+            "show_save_controls": show_save,
+            "save_url": save_url,
+            "image_id": str(image.id),
+            "hidden_inputs": [
+                ("action", "save"),
+                ("xmin", xmin),
+                ("xmax", xmax),
+                ("ymin", ymin),
+                ("ymax", ymax),
+                ("zmin", zmin),
+                ("zmax", zmax),
+            ],
+            "suggested_name": image.name,
+            "save_new_suffix": "trimmed",
+        },
+    )
+
+
+@login_and_team_required
+def trim_image_load_image(request, team_slug):
+    """GET: load trim controls and initial preview for a selected image."""
+    image_id = request.GET.get("image_id", "").strip()
+    if not image_id:
+        return HttpResponse("")
+
+    image = get_object_or_404(UploadedImage, id=image_id, team=request.team)
+    dimensions = list(image.dimensions)
+    if len(dimensions) == 2:
+        dimensions.append(1)
+
+    preview_response = _render_trim_preview(
+        request,
+        image,
+        0,
+        dimensions[0],
+        0,
+        dimensions[1],
+        0,
+        dimensions[2],
+    )
+    controls_html = render_to_string(
+        "pore_analysis/components/trim_controls.html",
+        {
+            "image": image,
+            "dimensions": dimensions,
+            "team_slug": team_slug,
+            "preview_url": reverse("pore_analysis_team:trim_image_preview", kwargs={"team_slug": team_slug}),
+        },
+        request=request,
+    )
+    return HttpResponse(preview_response.content.decode("utf-8") + controls_html)
+
+
+@login_and_team_required
+def trim_image_preview(request, team_slug):
+    """AJAX endpoint to preview trim bounds on original slices."""
+    image_id = request.POST.get("image_id")
+    image = get_object_or_404(UploadedImage, id=image_id, team=request.team)
+    show_save = request.POST.get("mode", "") == "applied"
+    save_url = reverse("pore_analysis_team:trim_image", kwargs={"team_slug": team_slug})
+    return _render_trim_preview(
+        request,
+        image,
+        request.POST.get("xmin", 0),
+        request.POST.get("xmax", image.dimensions[0]),
+        request.POST.get("ymin", 0),
+        request.POST.get("ymax", image.dimensions[1]),
+        request.POST.get("zmin", 0),
+        request.POST.get("zmax", image.dimensions[2] if len(image.dimensions) > 2 else 1),
+        show_save=show_save,
+        save_url=save_url,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Adjust Values – private helpers
+# ---------------------------------------------------------------------------
+
+def _apply_adjust_operation(arr: np.ndarray, operation: str, void_value: str = "") -> np.ndarray:
+    """Apply an adjust-values operation and return the result array."""
+    if operation == "invert":
+        if arr.dtype.kind != "b":
+            raise ValueError(_("Invert is only valid for boolean images."))
+        return ~arr
+    elif operation == "convert_to_bool":
+        if void_value == "":
+            raise ValueError(_("Please select a void value."))
+        return arr == int(void_value)
+    else:
+        raise ValueError(_("Unknown operation: {}").format(operation))
+
+
+def _save_adjusted_image(request, team_slug, image, result: np.ndarray, save_as: str, new_name: str):
+    """Persist *result* either by overwriting *image* or creating a new record."""
+    return _save_result_image(
+        request=request,
+        team_slug=team_slug,
+        image=image,
+        result=result,
+        save_as=save_as,
+        new_name=new_name,
+        derived_suffix="adjusted",
+        derived_description=_("Adjusted from {name}"),
+        overwrite_message=_("Image updated successfully."),
+        new_message=_("New image '{name}' created."),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Adjust Values – views
+# ---------------------------------------------------------------------------
+
+@login_and_team_required
+def adjust_values(request, team_slug):
+    """Main page: GET renders the tool shell; POST (action=save) persists the result."""
+    if request.method == "POST" and request.POST.get("action") == "save":
+        image_id = request.POST.get("image_id")
+        image = get_object_or_404(UploadedImage, id=image_id, team=request.team)
+        try:
+            with image.file.open("rb") as f:
+                arr = np.load(f, allow_pickle=False)
+            result = _apply_adjust_operation(
+                arr,
+                request.POST.get("operation", ""),
+                request.POST.get("void_value", ""),
+            )
+        except (ValueError, Exception) as exc:
+            messages.error(request, _("Save failed: {}").format(str(exc)))
+            return redirect("pore_analysis_team:adjust_values", team_slug=team_slug)
+        return _save_adjusted_image(
+            request, team_slug, image, result,
+            request.POST.get("save_as", "overwrite"),
+            request.POST.get("new_name", ""),
+        )
+
+    images = UploadedImage.objects.filter(team=request.team).order_by("-created_at")
+    save_url = reverse("pore_analysis_team:adjust_values", kwargs={"team_slug": team_slug})
+    context = {
+        "images": images,
+        "team_slug": team_slug,
+        "preview_url": reverse("pore_analysis_team:adjust_values_preview", kwargs={"team_slug": team_slug}),
+        "load_image_url": reverse("pore_analysis_team:adjust_values_load_image", kwargs={"team_slug": team_slug}),
+        "save_url": save_url,
+    }
+    context.update(get_pore_analysis_context(request))
+    return render(request, "pore_analysis/adjust_values.html", context)
+
+
+@login_and_team_required
+def adjust_values_load_image(request, team_slug):
+    """GET: load original slice preview + OOB operation controls for a selected image."""
+    from apps.pore_analysis.analysis.preview import array_to_preview_png
+
+    image_id = request.GET.get("image_id", "").strip()
+    if not image_id:
+        return HttpResponse("")
+
+    image = get_object_or_404(UploadedImage, id=image_id, team=request.team)
+    try:
+        arr = _load_uploaded_image_array(image)
+    except Exception as exc:
+        return HttpResponse(
+            f'<div class="alert alert-error"><span>{_("Could not load image: {}").format(exc)}</span></div>'
+        )
+
+    is_boolean = arr.dtype.kind == "b"
+    unique_values = [] if is_boolean else sorted(int(v) for v in np.unique(arr).tolist())
+
+    try:
+        preview_b64 = array_to_preview_png(arr)
+    except Exception as exc:
+        return HttpResponse(
+            f'<div class="alert alert-error"><span>{_("Preview failed: {}").format(exc)}</span></div>'
+        )
+
+    save_url = reverse("pore_analysis_team:adjust_values", kwargs={"team_slug": team_slug})
+
+    preview_html = render_to_string(
+        "pore_analysis/components/tool_preview.html",
+        {"preview_b64": preview_b64, "state": "original", "save_url": save_url},
+        request=request,
+    )
+    controls_html = render_to_string(
+        "pore_analysis/components/adjust_values_controls.html",
+        {"is_boolean": is_boolean, "unique_values": unique_values, "dtype": str(arr.dtype)},
+        request=request,
+    )
+    return HttpResponse(preview_html + controls_html)
+
+
+@login_and_team_required
+def adjust_values_preview(request, team_slug):
+    """POST: apply operation in memory, return processed preview with save buttons."""
+    from apps.pore_analysis.analysis.preview import array_to_preview_png
+
+    image_id = request.POST.get("image_id", "").strip()
+    if not image_id:
+        return HttpResponse(
+            '<div class="alert alert-error"><span>No image selected.</span></div>'
+        )
+
+    image = get_object_or_404(UploadedImage, id=image_id, team=request.team)
+    try:
+        arr = _load_uploaded_image_array(image)
+    except Exception as exc:
+        return HttpResponse(
+            f'<div class="alert alert-error"><span>{_("Could not load image: {}").format(exc)}</span></div>'
+        )
+
+    operation = request.POST.get("operation", "")
+    void_value = request.POST.get("void_value", "")
+
+    try:
+        result = _apply_adjust_operation(arr, operation, void_value)
+    except ValueError as exc:
+        return render(
+            request,
+            "pore_analysis/components/tool_preview.html",
+            {"error": str(exc), "state": "error"},
+        )
+
+    try:
+        preview_b64 = array_to_preview_png(result)
+    except Exception as exc:
+        return HttpResponse(
+            f'<div class="alert alert-error"><span>{_("Preview failed: {}").format(exc)}</span></div>'
+        )
+
+    save_url = reverse("pore_analysis_team:adjust_values", kwargs={"team_slug": team_slug})
+    return render(
+        request,
+        "pore_analysis/components/tool_preview.html",
+        {
+            "preview_b64": preview_b64,
+            "state": "processed",
+            "save_url": save_url,
+            "image_id": str(image_id),
+            "hidden_inputs": [
+                ("action", "save"),
+                ("operation", operation),
+                ("void_value", void_value),
+            ],
+            "suggested_name": image.name,
+            "save_new_suffix": "adjusted",
         },
     )
 
 
 @login_and_team_required
 def process_image(request, team_slug):
-    """Apply pore-processing operations to a selected uploaded image."""
-    images = UploadedImage.objects.filter(team=request.team).order_by("-created_at")
-
-    if request.method == "POST":
+    """Main cleaning page: GET renders the tool shell; POST (action=save) persists the result."""
+    if request.method == "POST" and request.POST.get("action") == "save":
         image_id = request.POST.get("image_id")
         image = get_object_or_404(UploadedImage, id=image_id, team=request.team)
 
@@ -248,50 +539,109 @@ def process_image(request, team_slug):
             return redirect("pore_analysis_team:process_image", team_slug=team_slug)
 
         try:
-            # Load original array
-            with image.file.open("rb") as f:
-                arr = np.load(f, allow_pickle=False).astype(bool)
-
-            if arr.dtype != bool:
-                messages.error(request, _("Selected image must be a boolean array."))
-                return redirect("pore_analysis_team:process_image", team_slug=team_slug)
-
-            # Run porespy operation
-            processed = ps.filters.fill_invalid_pores(arr).astype(bool, copy=False)
-
-            # Serialize .npy bytes
-            buffer = BytesIO()
-            np.save(buffer, processed, allow_pickle=False)
-            file_bytes = buffer.getvalue()
-
-            # Overwrite the same storage path
-            storage = image.file.storage
-            original_name = image.file.name
-            storage.delete(original_name)
-            storage.save(original_name, ContentFile(file_bytes))
-
-            # Refresh model metadata
-            image.file.name = original_name
-            image.file_size = len(file_bytes)
-            image.dimensions = list(processed.shape)
-
-            # Regenerate thumbnail so UI reflects updated image
-            if image.thumbnail:
-                image.thumbnail.delete(save=False)
-            image.generate_thumbnail(save=True)
-
-            image.save()
-
-            messages.success(request, _("Image processed successfully and overwritten."))
-            return redirect("pore_analysis_team:image_detail", team_slug=team_slug, image_id=image.id)
-
+            arr = _load_uploaded_image_array(image)
+            if arr.dtype.kind != "b":
+                raise ValueError(_("Selected image must be a boolean array."))
+            processed = ps.filters.fill_invalid_pores(arr.astype(bool, copy=False)).astype(bool, copy=False)
         except Exception as exc:
             messages.error(request, _("Processing failed: {}").format(str(exc)))
             return redirect("pore_analysis_team:process_image", team_slug=team_slug)
 
+        return _save_result_image(
+            request=request,
+            team_slug=team_slug,
+            image=image,
+            result=processed,
+            save_as=request.POST.get("save_as", "overwrite"),
+            new_name=request.POST.get("new_name", ""),
+            derived_suffix="cleaned",
+            derived_description=_("Cleaned from {name}"),
+            overwrite_message=_("Image processed successfully and overwritten."),
+            new_message=_("New image '{name}' created."),
+        )
+
     context = {
-        "images": images,
+        "images": UploadedImage.objects.filter(team=request.team).order_by("-created_at"),
         "team_slug": team_slug,
+        "preview_url": reverse("pore_analysis_team:process_image_preview", kwargs={"team_slug": team_slug}),
+        "load_image_url": reverse("pore_analysis_team:process_image_load_image", kwargs={"team_slug": team_slug}),
     }
     context.update(get_pore_analysis_context(request))
     return render(request, "pore_analysis/process_image.html", context)
+
+
+@login_and_team_required
+def process_image_load_image(request, team_slug):
+    """GET: load original slice preview for the cleaning tool."""
+    from apps.pore_analysis.analysis.preview import array_to_preview_png
+
+    image_id = request.GET.get("image_id", "").strip()
+    if not image_id:
+        return HttpResponse("")
+
+    image = get_object_or_404(UploadedImage, id=image_id, team=request.team)
+    try:
+        arr = _load_uploaded_image_array(image)
+        if arr.dtype.kind != "b":
+            raise ValueError(_("Selected image must be a boolean array."))
+        preview_b64 = array_to_preview_png(arr)
+    except Exception as exc:
+        return HttpResponse(
+            f'<div class="alert alert-error"><span>{_("Could not prepare preview: {}").format(exc)}</span></div>'
+        )
+
+    preview_html = render_to_string(
+        "pore_analysis/components/tool_preview.html",
+        {"preview_b64": preview_b64, "state": "original"},
+        request=request,
+    )
+    controls_html = render_to_string(
+        "pore_analysis/components/process_image_controls.html",
+        {},
+        request=request,
+    )
+    return HttpResponse(preview_html + controls_html)
+
+
+@login_and_team_required
+def process_image_preview(request, team_slug):
+    """POST: apply fill_invalid_pores in memory and return a processed preview."""
+    from apps.pore_analysis.analysis.preview import array_to_preview_png
+
+    image_id = request.POST.get("image_id", "").strip()
+    if not image_id:
+        return HttpResponse('<div class="alert alert-error"><span>No image selected.</span></div>')
+
+    if ps is None:
+        return HttpResponse(
+            f'<div class="alert alert-error"><span>{_("Porespy is not installed on this server.")}</span></div>'
+        )
+
+    image = get_object_or_404(UploadedImage, id=image_id, team=request.team)
+    try:
+        arr = _load_uploaded_image_array(image)
+        if arr.dtype.kind != "b":
+            raise ValueError(_("Selected image must be a boolean array."))
+        processed = ps.filters.fill_invalid_pores(arr.astype(bool, copy=False)).astype(bool, copy=False)
+        preview_b64 = array_to_preview_png(processed)
+    except Exception as exc:
+        return render(
+            request,
+            "pore_analysis/components/tool_preview.html",
+            {"error": _("Processing failed: {}" ).format(str(exc)), "state": "error"},
+        )
+
+    save_url = reverse("pore_analysis_team:process_image", kwargs={"team_slug": team_slug})
+    return render(
+        request,
+        "pore_analysis/components/tool_preview.html",
+        {
+            "preview_b64": preview_b64,
+            "state": "processed",
+            "save_url": save_url,
+            "image_id": str(image_id),
+            "hidden_inputs": [("action", "save")],
+            "suggested_name": image.name,
+            "save_new_suffix": "cleaned",
+        },
+    )

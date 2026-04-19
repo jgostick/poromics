@@ -9,13 +9,60 @@
     <h1 class="text-2xl font-bold">{% translate "Analysis Jobs" %}</h1>
   </div>
 
+  <form method="get" class="card bg-base-100 shadow mb-4">
+    <input type="hidden" name="sort_by" value="{{ selected_sort_by }}">
+    <input type="hidden" name="sort_dir" value="{{ selected_sort_dir }}">
+    <div class="card-body p-4 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+      <div>
+        <label class="label" for="image_id">
+          <span class="label-text">{% translate "Image" %}</span>
+        </label>
+        <select id="image_id" name="image_id" class="select select-bordered w-full">
+          <option value="">{% translate "All images" %}</option>
+          {% for image in images %}
+            <option value="{{ image.id }}" {% if image_id == image.id|stringformat:"s" %}selected{% endif %}>{{ image.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="label" for="status">
+          <span class="label-text">{% translate "Status" %}</span>
+        </label>
+        <select id="status" name="status" class="select select-bordered w-full">
+          <option value="">{% translate "All statuses" %}</option>
+          {% for status_value, status_label in status_choices %}
+            <option value="{{ status_value }}" {% if selected_status == status_value %}selected{% endif %}>{{ status_label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="label" for="analysis_type">
+          <span class="label-text">{% translate "Type" %}</span>
+        </label>
+        <select id="analysis_type" name="analysis_type" class="select select-bordered w-full">
+          <option value="">{% translate "All types" %}</option>
+          {% for type_value, type_label in analysis_type_choices %}
+            <option value="{{ type_value }}" {% if selected_analysis_type == type_value %}selected{% endif %}>{{ type_label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="flex gap-2">
+        <button type="submit" class="btn btn-primary">{% translate "Apply" %}</button>
+        <a class="btn btn-ghost" href="{% url 'pore_analysis_team:job_list' team_slug %}">{% translate "Clear" %}</a>
+      </div>
+    </div>
+  </form>
+
   <div class="card bg-base-100 shadow">
     <div class="card-body p-0">
       {% if jobs %}
       <div class="overflow-x-auto">
         <div
           id="jobs-table"
-          hx-get="{% url 'pore_analysis_team:job_list' team_slug %}"
+          hx-get="{% url 'pore_analysis_team:job_list' team_slug %}?partial=1{% if filters_querystring %}&{{ filters_querystring }}{% endif %}"
           hx-trigger="load, every 3s"
           hx-target="this"
           hx-swap="innerHTML">

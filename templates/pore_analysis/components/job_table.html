@@ -3,12 +3,37 @@
 <table class="table">
   <thead>
     <tr>
-      <th>{% translate "Type" %}</th>
-      <th>{% translate "Image" %}</th>
-      <th>{% translate "Status" %}</th>
+      <th>
+        <a class="link link-hover" href="{% url 'pore_analysis_team:job_list' team_slug %}?{{ sort_querystrings.type }}">
+          {% translate "Type" %}
+          {% if selected_sort_by == "type" %}{% if selected_sort_dir == "asc" %}▲{% else %}▼{% endif %}{% endif %}
+        </a>
+      </th>
+      <th>
+        <a class="link link-hover" href="{% url 'pore_analysis_team:job_list' team_slug %}?{{ sort_querystrings.image }}">
+          {% translate "Image" %}
+          {% if selected_sort_by == "image" %}{% if selected_sort_dir == "asc" %}▲{% else %}▼{% endif %}{% endif %}
+        </a>
+      </th>
+      <th>
+        <a class="link link-hover" href="{% url 'pore_analysis_team:job_list' team_slug %}?{{ sort_querystrings.status }}">
+          {% translate "Status" %}
+          {% if selected_sort_by == "status" %}{% if selected_sort_dir == "asc" %}▲{% else %}▼{% endif %}{% endif %}
+        </a>
+      </th>
       <th>{% translate "Queue" %}</th>
-      <th>{% translate "Progress" %}</th>
-      <th>{% translate "Created" %}</th>
+      <th>
+        <a class="link link-hover" href="{% url 'pore_analysis_team:job_list' team_slug %}?{{ sort_querystrings.progress }}">
+          {% translate "Progress" %}
+          {% if selected_sort_by == "progress" %}{% if selected_sort_dir == "asc" %}▲{% else %}▼{% endif %}{% endif %}
+        </a>
+      </th>
+      <th>
+        <a class="link link-hover" href="{% url 'pore_analysis_team:job_list' team_slug %}?{{ sort_querystrings.created }}">
+          {% translate "Created" %}
+          {% if selected_sort_by == "created" %}{% if selected_sort_dir == "asc" %}▲{% else %}▼{% endif %}{% endif %}
+        </a>
+      </th>
       <th></th>
     </tr>
   </thead>

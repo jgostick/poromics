@@ -1,0 +1,55 @@
+{% load i18n %}
+<div id="operation-controls" hx-swap-oob="true">
+  {% if is_boolean %}
+
+    <input type="hidden" name="operation" value="invert">
+    <div class="card bg-base-100 shadow">
+      <div class="card-body">
+        <div class="alert alert-info text-sm">
+          <i class="fa fa-circle-info"></i>
+          <span>
+            {% blocktranslate trimmed %}
+              Boolean image detected. Apply will swap all
+              <strong>True&nbsp;↔&nbsp;False</strong> values.
+            {% endblocktranslate %}
+          </span>
+        </div>
+      </div>
+    </div>
+
+  {% else %}
+
+    <input type="hidden" name="operation" value="convert_to_bool">
+    <div class="card bg-base-100 shadow">
+      <div class="card-body gap-3">
+        <h3 class="font-semibold">{% translate "Convert to Boolean" %}</h3>
+        <p class="text-sm text-base-content/70">
+          {% blocktranslate trimmed with dtype=dtype %}
+            Integer image ({{ dtype }}). Select the value that represents
+            <strong>void / pore space</strong>. Those voxels become
+            <code>True</code>; everything else becomes <code>False</code>.
+          {% endblocktranslate %}
+        </p>
+        <div class="form-control">
+          <label class="label pb-1" for="void-value-select">
+            <span class="label-text">{% translate "Void value" %}</span>
+            <span class="label-text-alt text-base-content/50">
+              {% blocktranslate trimmed with n=unique_values|length %}
+                {{ n }} unique value(s) found
+              {% endblocktranslate %}
+            </span>
+          </label>
+          <select id="void-value-select"
+                  name="void_value"
+                  class="select select-bordered w-full"
+                  required>
+            {% for val in unique_values %}
+              <option value="{{ val }}">{{ val }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+  {% endif %}
+</div>
