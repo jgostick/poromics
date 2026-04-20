@@ -2,6 +2,7 @@
 {% load i18n %}
 
 {% block launch_title %}{% translate "Network Extraction" %}{% endblock %}
+{% block launch_analysis_type %}network_extraction{% endblock %}
 {% block launch_heading %}{% translate "Launch Network Extraction Job" %}{% endblock %}
 {% block launch_description %}
   {% translate "Select an image, choose SNOW2 or MAGNET, and configure CPU or Dask-parallel execution." %}
@@ -78,6 +79,7 @@
 {% block launch_submit_label %}{% translate "Queue Network Extraction Job" %}{% endblock %}
 
 {% block page_js %}
+{{ block.super }}
 <script>
   (function () {
     const methodSelect = document.getElementById('id_method');

@@ -1,11 +1,22 @@
 from decimal import Decimal
 
 from django.contrib import messages
+from django.db import transaction
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from kombu.exceptions import OperationalError
 
+from apps.pore_analysis.analysis.pricing import (
+    InsufficientCreditsError,
+    NoPricingRateError,
+    calculate_estimated_credits,
+    charge_job_upfront,
+    ensure_sufficient_credits,
+    get_team_credit_balance,
+    refund_job_charge,
+)
 from apps.pore_analysis.forms import (
     DiffusivityLaunchForm,
     NetworkExtractionLaunchForm,
@@ -59,6 +70,91 @@ def _broker_ready(app) -> tuple[bool, str]:
         return False, f"Broker unreachable: {exc}"
 
 
+def _create_job_with_upfront_charge(*, team, user, image, analysis_type: str, parameters: dict) -> AnalysisJob:
+    estimated_credits = calculate_estimated_credits(
+        image=image,
+        analysis_type=analysis_type,
+        parameters=parameters,
+    )
+    ensure_sufficient_credits(team=team, required_credits=estimated_credits)
+
+    with transaction.atomic():
+        job = AnalysisJob.objects.create(
+            team=team,
+            image=image,
+            analysis_type=analysis_type,
+            started_by=user,
+            estimated_cost=estimated_credits,
+            parameters=parameters,
+            status=JobStatus.PENDING,
+        )
+        charge_job_upfront(job)
+
+    return job
+
+
+def _mark_enqueue_failure_with_refund(job: AnalysisJob, exc: Exception) -> None:
+    with transaction.atomic():
+        refund_job_charge(job, reason="failed to enqueue")
+        job.status = JobStatus.FAILED
+        job.actual_cost = Decimal("0.00")
+        job.error_message = f"Failed to enqueue task: {exc}"
+        job.completed_at = timezone.now()
+        job.save(update_fields=["status", "actual_cost", "error_message", "completed_at", "updated_at"])
+
+
+def _handle_pricing_errors(request, exc: Exception, redirect_name: str, team_slug: str):
+    if isinstance(exc, NoPricingRateError):
+        messages.error(
+            request,
+            _("Pricing is not configured for this analysis/backend. %(reason)s")
+            % {"reason": str(exc)},
+        )
+    elif isinstance(exc, InsufficientCreditsError):
+        messages.error(
+            request,
+            _("Not enough credits to start this job. %(reason)s") % {"reason": str(exc)},
+        )
+    return redirect(redirect_name, team_slug=team_slug)
+
+
+@login_and_team_required
+def estimate_job_cost(request, team_slug):
+    analysis_type = (request.GET.get("analysis_type") or "").strip()
+    image_id = (request.GET.get("image") or "").strip()
+    backend = (request.GET.get("backend") or "default").strip()
+
+    if analysis_type not in dict(AnalysisType.choices):
+        return JsonResponse({"ok": False, "error": "Invalid analysis type."}, status=400)
+
+    if not image_id:
+        return JsonResponse({"ok": False, "error": "Select an image to estimate cost."}, status=400)
+
+    try:
+        image = UploadedImage.objects.get(id=image_id, team=request.team)
+    except UploadedImage.DoesNotExist:
+        return JsonResponse({"ok": False, "error": "Image not found."}, status=404)
+
+    try:
+        estimated_credits = calculate_estimated_credits(
+            image=image,
+            analysis_type=analysis_type,
+            parameters={"backend": backend},
+        )
+        balance = get_team_credit_balance(request.team)
+    except NoPricingRateError as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "estimated_credits": f"{estimated_credits:.2f}",
+            "balance": f"{balance:.2f}",
+            "can_afford": balance >= estimated_credits,
+        }
+    )
+
+
 @login_and_team_required
 def permeability_launch(request, team_slug):
     if request.method == "POST":
@@ -73,23 +169,26 @@ def permeability_launch(request, team_slug):
                 messages.error(request, _("Queue service unavailable. %(reason)s") % {"reason": reason})
                 return redirect("pore_analysis_team:permeability_launch", team_slug=team_slug)
 
-            job = AnalysisJob.objects.create(
-                team=request.team,
-                image=image,
-                analysis_type=AnalysisType.PERMEABILITY,
-                started_by=request.user,
-                estimated_cost=Decimal("0.00"),
-                parameters=params,
-                status=JobStatus.PENDING,
-            )
+            try:
+                job = _create_job_with_upfront_charge(
+                    team=request.team,
+                    user=request.user,
+                    image=image,
+                    analysis_type=AnalysisType.PERMEABILITY,
+                    parameters=params,
+                )
+            except (NoPricingRateError, InsufficientCreditsError) as exc:
+                return _handle_pricing_errors(
+                    request,
+                    exc,
+                    "pore_analysis_team:permeability_launch",
+                    team_slug,
+                )
 
             try:
                 task = run_permeability_job.apply_async(args=[str(job.id)], queue=queue)
             except Exception as exc:
-                job.status = JobStatus.FAILED
-                job.error_message = f"Failed to enqueue task: {exc}"
-                job.completed_at = timezone.now()
-                job.save(update_fields=["status", "error_message", "completed_at", "updated_at"])
+                _mark_enqueue_failure_with_refund(job, exc)
                 messages.error(
                     request,
                     _("Could not queue job on '%(queue)s'. %(reason)s") % {
@@ -128,23 +227,26 @@ def diffusivity_launch(request, team_slug):
                 messages.error(request, _("Queue service unavailable. %(reason)s") % {"reason": reason})
                 return redirect("pore_analysis_team:diffusivity_launch", team_slug=team_slug)
 
-            job = AnalysisJob.objects.create(
-                team=request.team,
-                image=image,
-                analysis_type=AnalysisType.DIFFUSIVITY,
-                started_by=request.user,
-                estimated_cost=Decimal("0.00"),
-                parameters=params,
-                status=JobStatus.PENDING,
-            )
+            try:
+                job = _create_job_with_upfront_charge(
+                    team=request.team,
+                    user=request.user,
+                    image=image,
+                    analysis_type=AnalysisType.DIFFUSIVITY,
+                    parameters=params,
+                )
+            except (NoPricingRateError, InsufficientCreditsError) as exc:
+                return _handle_pricing_errors(
+                    request,
+                    exc,
+                    "pore_analysis_team:diffusivity_launch",
+                    team_slug,
+                )
 
             try:
                 task = run_diffusivity_job.apply_async(args=[str(job.id)], queue=queue)
             except Exception as exc:
-                job.status = JobStatus.FAILED
-                job.error_message = f"Failed to enqueue task: {exc}"
-                job.completed_at = timezone.now()
-                job.save(update_fields=["status", "error_message", "completed_at", "updated_at"])
+                _mark_enqueue_failure_with_refund(job, exc)
                 messages.error(
                     request,
                     _("Could not queue job on '%(queue)s'. %(reason)s") % {
@@ -201,25 +303,23 @@ def pore_size_launch(request, team_slug):
                 messages.error(request, _("Queue service unavailable. %(reason)s") % {"reason": reason})
                 return redirect(REDIRECT_NAME_ON_ERROR, team_slug=team_slug)
 
-            # 5) Create AnalysisJob row in PENDING state
-            job = AnalysisJob.objects.create(
-                team=request.team,
-                image=image,
-                analysis_type=ANALYSIS_TYPE_ENUM,
-                started_by=request.user,
-                estimated_cost=Decimal("0.00"),
-                parameters=params,
-                status=JobStatus.PENDING,
-            )
+            # 5) Create AnalysisJob row and charge credits up front
+            try:
+                job = _create_job_with_upfront_charge(
+                    team=request.team,
+                    user=request.user,
+                    image=image,
+                    analysis_type=ANALYSIS_TYPE_ENUM,
+                    parameters=params,
+                )
+            except (NoPricingRateError, InsufficientCreditsError) as exc:
+                return _handle_pricing_errors(request, exc, REDIRECT_NAME_ON_ERROR, team_slug)
 
             # 6) Enqueue celery task (capture and handle enqueue failure)
             try:
                 task = TASK_FUNCTION.apply_async(args=[str(job.id)], queue=queue)
             except Exception as exc:
-                job.status = JobStatus.FAILED
-                job.error_message = f"Failed to enqueue task: {exc}"
-                job.completed_at = timezone.now()
-                job.save(update_fields=["status", "error_message", "completed_at", "updated_at"])
+                _mark_enqueue_failure_with_refund(job, exc)
                 messages.error(
                     request,
                     _("Could not queue job on '%(queue)s'. %(reason)s") % {
@@ -263,23 +363,26 @@ def network_extraction_launch(request, team_slug):
                 messages.error(request, _("Queue service unavailable. %(reason)s") % {"reason": reason})
                 return redirect("pore_analysis_team:network_extraction_launch", team_slug=team_slug)
 
-            job = AnalysisJob.objects.create(
-                team=request.team,
-                image=image,
-                analysis_type=AnalysisType.NETWORK_EXTRACTION,
-                started_by=request.user,
-                estimated_cost=Decimal("0.00"),
-                parameters=params,
-                status=JobStatus.PENDING,
-            )
+            try:
+                job = _create_job_with_upfront_charge(
+                    team=request.team,
+                    user=request.user,
+                    image=image,
+                    analysis_type=AnalysisType.NETWORK_EXTRACTION,
+                    parameters=params,
+                )
+            except (NoPricingRateError, InsufficientCreditsError) as exc:
+                return _handle_pricing_errors(
+                    request,
+                    exc,
+                    "pore_analysis_team:network_extraction_launch",
+                    team_slug,
+                )
 
             try:
                 task = run_network_extraction_job.apply_async(args=[str(job.id)], queue=queue)
             except Exception as exc:
-                job.status = JobStatus.FAILED
-                job.error_message = f"Failed to enqueue task: {exc}"
-                job.completed_at = timezone.now()
-                job.save(update_fields=["status", "error_message", "completed_at", "updated_at"])
+                _mark_enqueue_failure_with_refund(job, exc)
                 messages.error(
                     request,
                     _("Could not queue job on '%(queue)s'. %(reason)s")
@@ -319,23 +422,26 @@ def network_validation_launch(request, team_slug):
                 messages.error(request, _("Queue service unavailable. %(reason)s") % {"reason": reason})
                 return redirect("pore_analysis_team:network_validation_launch", team_slug=team_slug)
 
-            job = AnalysisJob.objects.create(
-                team=request.team,
-                image=image,
-                analysis_type=AnalysisType.NETWORK_VALIDATION,
-                started_by=request.user,
-                estimated_cost=Decimal("0.00"),
-                parameters=params,
-                status=JobStatus.PENDING,
-            )
+            try:
+                job = _create_job_with_upfront_charge(
+                    team=request.team,
+                    user=request.user,
+                    image=image,
+                    analysis_type=AnalysisType.NETWORK_VALIDATION,
+                    parameters=params,
+                )
+            except (NoPricingRateError, InsufficientCreditsError) as exc:
+                return _handle_pricing_errors(
+                    request,
+                    exc,
+                    "pore_analysis_team:network_validation_launch",
+                    team_slug,
+                )
 
             try:
                 task = run_network_validation_job.apply_async(args=[str(job.id)], queue=queue)
             except Exception as exc:
-                job.status = JobStatus.FAILED
-                job.error_message = f"Failed to enqueue task: {exc}"
-                job.completed_at = timezone.now()
-                job.save(update_fields=["status", "error_message", "completed_at", "updated_at"])
+                _mark_enqueue_failure_with_refund(job, exc)
                 messages.error(
                     request,
                     _("Could not queue job on '%(queue)s'. %(reason)s") % {

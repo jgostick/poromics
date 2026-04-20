@@ -1,12 +1,14 @@
 from datetime import date, datetime, timedelta
 
+from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth.decorators import user_passes_test
 from django.core.paginator import Paginator
+from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 from django.utils import timezone
 
-from apps.dashboard.forms import AdminJobFilterForm, DateRangeForm
+from apps.dashboard.forms import AdminCreditGrantForm, AdminJobFilterForm, DateRangeForm
 from apps.dashboard.services import (
     get_celery_status,
     get_credits_by_team,
@@ -15,6 +17,7 @@ from apps.dashboard.services import (
     get_user_signups,
     get_users_with_teams,
 )
+from apps.pore_analysis.models import CreditTransaction
 from apps.users.models import CustomUser
 
 
@@ -98,12 +101,31 @@ def admin_users(request):
 
 @_superuser_required
 def admin_credits(request):
+    if request.method == "POST":
+        form = AdminCreditGrantForm(request.POST)
+        if form.is_valid():
+            team_id = form.cleaned_data["team"]
+            credit_user = form.cleaned_data.get("user") or request.user
+            CreditTransaction.objects.create(
+                team_id=team_id,
+                user=credit_user,
+                transaction_type="purchase",
+                amount=form.cleaned_data["amount"],
+                description=form.cleaned_data["description"],
+            )
+            messages.success(request, "Credits added successfully.")
+            return redirect("dashboard:admin_credits")
+        messages.error(request, "Please correct the credit form errors below.")
+    else:
+        form = AdminCreditGrantForm()
+
     teams = get_credits_by_team()
     return TemplateResponse(
         request,
         "dashboard/site_admin/credits.html",
         context={
             "active_tab": "admin-credits",
+            "form": form,
             "teams": teams,
         },
     )

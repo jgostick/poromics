@@ -1,5 +1,6 @@
 import logging
 import os
+from decimal import Decimal
 
 import numpy as np
 from celery import shared_task
@@ -8,9 +9,20 @@ from django.core.files.base import ContentFile
 from django.db import transaction
 from django.utils import timezone
 
+from .analysis.pricing import refund_job_charge
 from .models import AnalysisJob, AnalysisResult, JobStatus
 
 log = logging.getLogger(__name__)
+
+
+def _fail_job_with_refund(job: AnalysisJob, exc: Exception) -> None:
+    with transaction.atomic():
+        job.status = JobStatus.FAILED
+        job.completed_at = timezone.now()
+        job.actual_cost = Decimal("0.00")
+        job.error_message = str(exc)
+        job.save(update_fields=["status", "completed_at", "actual_cost", "error_message", "updated_at"])
+        refund_job_charge(job, reason="job failed")
 
 
 @shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 1})
@@ -57,16 +69,14 @@ def run_permeability_job(self, job_id):
 
             job.status = JobStatus.COMPLETED
             job.completed_at = timezone.now()
+            job.actual_cost = job.estimated_cost
             job.progress_percentage = 100
-            job.save(update_fields=["status", "completed_at", "progress_percentage", "updated_at"])
+            job.save(update_fields=["status", "completed_at", "actual_cost", "progress_percentage", "updated_at"])
 
         return {"job_id": str(job.id), "status": "completed"}
 
     except Exception as exc:
-        job.status = JobStatus.FAILED
-        job.completed_at = timezone.now()
-        job.error_message = str(exc)
-        job.save(update_fields=["status", "completed_at", "error_message", "updated_at"])
+        _fail_job_with_refund(job, exc)
         raise
 
 
@@ -129,17 +139,15 @@ def run_diffusivity_job(self, job_id):
             )
             job.status = JobStatus.COMPLETED
             job.completed_at = timezone.now()
+            job.actual_cost = job.estimated_cost
             job.progress_percentage = 100
-            job.save(update_fields=["status", "completed_at", "progress_percentage", "updated_at"])
+            job.save(update_fields=["status", "completed_at", "actual_cost", "progress_percentage", "updated_at"])
 
         return {"job_id": str(job.id), "status": "completed"}
 
     except Exception as exc:
         log.exception("Diffusivity job %s failed", job_id)
-        job.status = JobStatus.FAILED
-        job.completed_at = timezone.now()
-        job.error_message = str(exc)
-        job.save(update_fields=["status", "completed_at", "error_message", "updated_at"])
+        _fail_job_with_refund(job, exc)
         raise
 
 
@@ -189,17 +197,15 @@ def run_poresize_job(self, job_id):
             )
             job.status = JobStatus.COMPLETED
             job.completed_at = timezone.now()
+            job.actual_cost = job.estimated_cost
             job.progress_percentage = 100
-            job.save(update_fields=["status", "completed_at", "progress_percentage", "updated_at"])
+            job.save(update_fields=["status", "completed_at", "actual_cost", "progress_percentage", "updated_at"])
 
         return {"job_id": str(job.id), "status": "completed"}
 
     except Exception as exc:
         log.exception("Pore-size job %s failed", job_id)
-        job.status = JobStatus.FAILED
-        job.completed_at = timezone.now()
-        job.error_message = str(exc)
-        job.save(update_fields=["status", "completed_at", "error_message", "updated_at"])
+        _fail_job_with_refund(job, exc)
         raise
 
 
@@ -261,17 +267,15 @@ def run_network_extraction_job(self, job_id):
 
             job.status = JobStatus.COMPLETED
             job.completed_at = timezone.now()
+            job.actual_cost = job.estimated_cost
             job.progress_percentage = 100
-            job.save(update_fields=["status", "completed_at", "progress_percentage", "updated_at"])
+            job.save(update_fields=["status", "completed_at", "actual_cost", "progress_percentage", "updated_at"])
 
         return {"job_id": str(job.id), "status": "completed"}
 
     except Exception as exc:
         log.exception("Network extraction job %s failed", job_id)
-        job.status = JobStatus.FAILED
-        job.completed_at = timezone.now()
-        job.error_message = str(exc)
-        job.save(update_fields=["status", "completed_at", "error_message", "updated_at"])
+        _fail_job_with_refund(job, exc)
         raise
 
 
@@ -320,16 +324,14 @@ def run_network_validation_job(self, job_id):
             )
             job.status = JobStatus.COMPLETED
             job.completed_at = timezone.now()
+            job.actual_cost = job.estimated_cost
             job.progress_percentage = 100
-            job.save(update_fields=["status", "completed_at", "progress_percentage", "updated_at"])
+            job.save(update_fields=["status", "completed_at", "actual_cost", "progress_percentage", "updated_at"])
 
         return {"job_id": str(job.id), "status": "completed"}
 
     except Exception as exc:
         log.exception("Network validation job %s failed", job_id)
-        job.status = JobStatus.FAILED
-        job.completed_at = timezone.now()
-        job.error_message = str(exc)
-        job.save(update_fields=["status", "completed_at", "error_message", "updated_at"])
+        _fail_job_with_refund(job, exc)
         raise
 

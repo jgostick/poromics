@@ -40,7 +40,7 @@ def run_julia_diffusivity(*, image_array: np.ndarray, direction: str, tolerance:
     ------
     RuntimeError if the Julia server is unreachable or the job fails.
     """
-    from julia_client import submit_job, poll_job
+    from julia_client import poll_job, submit_job
 
     use_gpu = backend.lower() == "gpu"
     arr = image_array.astype(bool)

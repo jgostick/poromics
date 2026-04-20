@@ -23,10 +23,11 @@ from django.views.generic import RedirectView
 from django.views.i18n import JavaScriptCatalog
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 
+from apps.pore_analysis.urls import team_urlpatterns as pore_analysis_team_urls
+from apps.pore_analysis.urls import urlpatterns as pore_analysis_urls
 from apps.teams.urls import team_urlpatterns as single_team_urls
 from apps.web.sitemaps import StaticViewSitemap
 from apps.web.urls import team_urlpatterns as web_team_urls
-from apps.pore_analysis.urls import urlpatterns as pore_analysis_urls, team_urlpatterns as pore_analysis_team_urls
 
 sitemaps = {
     "static": StaticViewSitemap(),

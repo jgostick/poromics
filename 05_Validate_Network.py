@@ -1,9 +1,6 @@
+
 import openpnm as op
 import streamlit as st
-from funcs import render_network_and_image
-import tempfile
-import pathlib
-
 
 state = st.session_state
 for key, val in [

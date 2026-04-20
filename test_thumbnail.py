@@ -3,11 +3,10 @@
 Test script for thumbnail generation.
 Run with: python test_thumbnail.py
 """
-import os
-import sys
-import django
-import numpy as np
 import logging
+import os
+
+import django
 
 # Setup Django environment
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'poromics.settings')
@@ -48,7 +47,7 @@ def test_thumbnail_generation():
             # Now try to save it
             image.generate_thumbnail(save=True)
             image.save()
-            print(f"✅ Thumbnail saved successfully!")
+            print("✅ Thumbnail saved successfully!")
             
         else:
             print("❌ Thumbnail generation returned None")

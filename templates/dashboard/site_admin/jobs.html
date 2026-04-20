@@ -74,7 +74,7 @@
           <th>{% translate "Progress" %}</th>
           <th>{% translate "Started by" %}</th>
           <th>{% translate "Created" %}</th>
-          <th>{% translate "Cost" %}</th>
+          <th>{% translate "Credits" %}</th>
         </tr>
       </thead>
       <tbody>
@@ -106,8 +106,8 @@
           <td>{{ job.started_by.email }}</td>
           <td class="whitespace-nowrap">{{ job.created_at|date:"Y-m-d H:i" }}</td>
           <td>
-            {% if job.actual_cost is not None %}${{ job.actual_cost }}
-            {% elif job.estimated_cost %}~${{ job.estimated_cost }}
+            {% if job.actual_cost is not None %}{{ job.actual_cost }}
+            {% elif job.estimated_cost %}~{{ job.estimated_cost }}
             {% else %}—{% endif %}
           </td>
         </tr>

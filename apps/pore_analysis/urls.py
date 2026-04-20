@@ -1,4 +1,5 @@
 from django.urls import path
+
 from . import views
 
 app_name = 'pore_analysis'
@@ -23,6 +24,7 @@ team_urlpatterns = (
         path('jobs/', views.job_list, name='job_list'),
         path('jobs/<uuid:job_id>/', views.job_detail, name='job_detail'),
         path('credits/', views.credit_dashboard, name='credit_dashboard'),
+        path('credits/estimate/', views.estimate_job_cost, name='estimate_job_cost'),
         path("analysis/permeability/", views.permeability_launch, name="permeability_launch"),
         path("analysis/diffusivity/", views.diffusivity_launch, name="diffusivity_launch"),
         path("network-extraction/", views.network_extraction_launch, name="network_extraction_launch"),

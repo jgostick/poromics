@@ -13,6 +13,7 @@
 
   <div class="card bg-base-100 shadow-lg">
     <div class="card-body">
+      <div id="launch-analysis-type" data-analysis-type="{% block launch_analysis_type %}{% endblock %}"></div>
       <form method="post" class="space-y-5">
         {% csrf_token %}
 
@@ -28,6 +29,25 @@
           {% endfor %}
         {% endblock %}
 
+        <div id="credit-estimate-panel" class="hidden rounded-box border border-base-300 bg-base-200 p-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="text-xs font-semibold uppercase tracking-wide text-base-content/60">
+                {% translate "Estimated Cost" %}
+              </div>
+              <div class="mt-1 flex items-center gap-2">
+                <span id="credit-estimate-badge" class="badge badge-primary badge-lg">0.00</span>
+                <span class="text-sm text-base-content/70">{% translate "credits" %}</span>
+              </div>
+            </div>
+            <div class="text-sm text-base-content/70">
+              <span>{% translate "Available balance:" %}</span>
+              <span id="credit-balance-value" class="font-semibold text-base-content">0.00</span>
+            </div>
+          </div>
+          <p id="credit-estimate-message" class="mt-3 text-sm text-base-content/70"></p>
+        </div>
+
         <div class="card-actions justify-end pt-2">
           <button type="submit" class="btn btn-primary">
             {% block launch_submit_label %}{% translate "Queue Job" %}{% endblock %}
@@ -37,4 +57,98 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block page_js %}
+<script>
+  (function () {
+    const imageSelect = document.getElementById('id_image');
+    const backendSelect = document.getElementById('id_backend');
+    const panel = document.getElementById('credit-estimate-panel');
+    const badge = document.getElementById('credit-estimate-badge');
+    const balanceValue = document.getElementById('credit-balance-value');
+    const message = document.getElementById('credit-estimate-message');
+    const analysisTypeNode = document.getElementById('launch-analysis-type');
+    const analysisType = analysisTypeNode ? analysisTypeNode.dataset.analysisType : '';
+    const estimateUrl = '{% url "pore_analysis_team:estimate_job_cost" team_slug %}';
+
+    function hidePanel() {
+      if (panel) {
+        panel.classList.add('hidden');
+      }
+    }
+
+    function showMessage(text, tone) {
+      if (!message) {
+        return;
+      }
+
+      message.textContent = text;
+      message.classList.remove('text-error', 'text-success', 'text-base-content/70');
+      if (tone === 'error') {
+        message.classList.add('text-error');
+      } else if (tone === 'success') {
+        message.classList.add('text-success');
+      } else {
+        message.classList.add('text-base-content/70');
+      }
+    }
+
+    async function updateEstimate() {
+      if (!panel || !imageSelect || !analysisType || !imageSelect.value) {
+        hidePanel();
+        return;
+      }
+
+      const params = new URLSearchParams({
+        analysis_type: analysisType,
+        image: imageSelect.value,
+      });
+      if (backendSelect && backendSelect.value) {
+        params.set('backend', backendSelect.value);
+      }
+
+      panel.classList.remove('hidden');
+      badge.textContent = '...';
+      balanceValue.textContent = '...';
+      showMessage('{% translate "Calculating estimate..." %}', 'neutral');
+
+      try {
+        const response = await fetch(`${estimateUrl}?${params.toString()}`, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const payload = await response.json();
+
+        if (!response.ok || !payload.ok) {
+          badge.textContent = '--';
+          balanceValue.textContent = '--';
+          showMessage(payload.error || '{% translate "Unable to estimate cost." %}', 'error');
+          return;
+        }
+
+        badge.textContent = payload.estimated_credits;
+        balanceValue.textContent = payload.balance;
+
+        if (payload.can_afford) {
+          showMessage('{% translate "This team has enough credits to run the job." %}', 'success');
+        } else {
+          showMessage('{% translate "This team does not have enough credits to run the job." %}', 'error');
+        }
+      } catch (error) {
+        badge.textContent = '--';
+        balanceValue.textContent = '--';
+        showMessage('{% translate "Unable to estimate cost right now." %}', 'error');
+      }
+    }
+
+    if (imageSelect) {
+      imageSelect.addEventListener('change', updateEstimate);
+    }
+    if (backendSelect) {
+      backendSelect.addEventListener('change', updateEstimate);
+    }
+
+    updateEstimate();
+  })();
+</script>
 {% endblock %}

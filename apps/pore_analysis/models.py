@@ -1,20 +1,17 @@
-import uuid
-import os
-import pickle
 import json
+import pickle
+import uuid
 from decimal import Decimal
-from django.db import models
+
+import numpy as np
 from django.contrib.auth import get_user_model
+from django.core.validators import MinValueValidator
+from django.db import models
 from django.utils.translation import gettext_lazy as _
-from django.core.files.base import ContentFile
-from django.core.files.storage import default_storage
-from django.conf import settings
+
 from apps.teams.models import BaseTeamModel
 from apps.utils.models import BaseModel
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_agg import FigureCanvasAgg
-from io import BytesIO
+
 try:
     import porespy as ps
 except ImportError:
@@ -103,10 +100,11 @@ class UploadedImage(BaseTeamModel):
             # Set matplotlib backend before importing pyplot
             import matplotlib
             matplotlib.use('Agg')
-            import matplotlib.pyplot as plt
-            from matplotlib.backends.backend_agg import FigureCanvasAgg
             from io import BytesIO
+
+            import matplotlib.pyplot as plt
             from django.core.files.base import ContentFile
+            from matplotlib.backends.backend_agg import FigureCanvasAgg
             
             # Clear any existing figures
             plt.clf()
@@ -220,8 +218,14 @@ class AnalysisJob(BaseTeamModel):
     error_message = models.TextField(blank=True, help_text="Error details if job failed")
     
     # Cost tracking
-    estimated_cost = models.DecimalField(max_digits=8, decimal_places=2, help_text="Estimated cost in USD")
-    actual_cost = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, help_text="Actual cost charged")
+    estimated_cost = models.DecimalField(max_digits=8, decimal_places=2, help_text="Estimated credits for this job")
+    actual_cost = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Actual credits charged",
+    )
     
     class Meta:
         ordering = ['-created_at']
@@ -237,6 +241,35 @@ class AnalysisJob(BaseTeamModel):
         if self.started_at and self.completed_at:
             return self.completed_at - self.started_at
         return None
+
+
+class AnalysisPricingRate(BaseModel):
+    """Pricing rates expressed in credits per million voxels."""
+
+    analysis_type = models.CharField(max_length=50, choices=AnalysisType.choices)
+    backend = models.CharField(
+        max_length=20,
+        default="default",
+        help_text="Compute backend key (e.g. cpu, gpu, default)",
+    )
+    credits_per_million_voxels = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        validators=[MinValueValidator(Decimal("0"))],
+        help_text="Credits charged per one million voxels",
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["analysis_type", "backend"]
+        constraints = [
+            models.UniqueConstraint(fields=["analysis_type", "backend"], name="unique_analysis_pricing_rate"),
+        ]
+        verbose_name = "Analysis Pricing Rate"
+        verbose_name_plural = "Analysis Pricing Rates"
+
+    def __str__(self):
+        return f"{self.analysis_type}:{self.backend} -> {self.credits_per_million_voxels} credits/M voxels"
 
 
 class AnalysisResult(BaseModel):
@@ -329,7 +362,11 @@ class CreditTransaction(BaseTeamModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='credit_transactions')
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
-    amount = models.DecimalField(max_digits=8, decimal_places=2, help_text="Amount in USD (positive=credit, negative=debit)")
+    amount = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        help_text="Credit amount (positive=credit, negative=debit)",
+    )
     
     # Related objects
     analysis_job = models.ForeignKey(AnalysisJob, on_delete=models.SET_NULL, null=True, blank=True,
@@ -346,4 +383,4 @@ class CreditTransaction(BaseTeamModel):
         
     def __str__(self):
         symbol = '+' if self.amount >= 0 else ''
-        return f"{symbol}${self.amount} - {self.description} ({self.user.email})"
+        return f"{symbol}{self.amount} credits - {self.description} ({self.user.email})"

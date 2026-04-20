@@ -10,7 +10,6 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext as _
 
-from apps.pore_analysis.forms import ImagePickerForm, TrimImageForm
 from apps.pore_analysis.models import UploadedImage
 from apps.teams.decorators import login_and_team_required
 

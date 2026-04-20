@@ -1,0 +1,70 @@
+{% extends "pore_analysis/base.html" %}
+{% load i18n %}
+
+{% block title %}{% translate "Credits" %}{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6">
+  <div>
+    <h1 class="text-3xl font-bold text-base-content">{% translate "Team Credits" %}</h1>
+    <p class="text-base-content/70 mt-2">{% translate "View your current balance and recent credit activity." %}</p>
+  </div>
+
+  <div class="stats shadow w-full bg-base-100">
+    <div class="stat">
+      <div class="stat-title">{% translate "Available Credits" %}</div>
+      <div class="stat-value text-primary">{{ credit_balance|floatformat:2 }}</div>
+      <div class="stat-desc">{% translate "Current team balance" %}</div>
+    </div>
+  </div>
+
+  <div class="card bg-base-100 shadow-sm">
+    <div class="card-body">
+      <h2 class="card-title text-lg">{% translate "Transactions" %}</h2>
+
+      {% if transactions %}
+        <div class="overflow-x-auto">
+          <table class="table table-sm w-full">
+            <thead>
+              <tr>
+                <th>{% translate "Date" %}</th>
+                <th>{% translate "Type" %}</th>
+                <th class="text-right">{% translate "Amount" %}</th>
+                <th>{% translate "Description" %}</th>
+                <th>{% translate "User" %}</th>
+                <th>{% translate "Job" %}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for transaction in transactions %}
+              <tr class="hover">
+                <td class="whitespace-nowrap">{{ transaction.created_at|date:"Y-m-d H:i" }}</td>
+                <td>{{ transaction.get_transaction_type_display }}</td>
+                <td class="text-right font-mono {% if transaction.amount >= 0 %}text-success{% else %}text-error{% endif %}">
+                  {{ transaction.amount|floatformat:2 }}
+                </td>
+                <td>{{ transaction.description }}</td>
+                <td>{{ transaction.user.email|default:transaction.user.username }}</td>
+                <td>
+                  {% if transaction.analysis_job %}
+                    <a class="link link-hover" href="{% url 'pore_analysis_team:job_detail' team_slug transaction.analysis_job.id %}">
+                      {{ transaction.analysis_job.id|truncatechars:12 }}
+                    </a>
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="rounded-box border border-dashed border-base-300 p-8 text-center text-base-content/70">
+          {% translate "No credit transactions yet." %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

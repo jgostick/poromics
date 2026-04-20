@@ -1,5 +1,6 @@
 from django.contrib import admin
-from .models import UploadedImage, AnalysisJob, AnalysisResult, CreditTransaction
+
+from .models import AnalysisJob, AnalysisPricingRate, AnalysisResult, CreditTransaction, UploadedImage
 
 
 @admin.register(UploadedImage)
@@ -38,7 +39,7 @@ class AnalysisJobAdmin(admin.ModelAdmin):
         ('Processing', {
             'fields': ('celery_task_id', 'progress_percentage', 'started_at', 'completed_at', 'error_message'),
         }),
-        ('Billing', {
+        ('Credits', {
             'fields': ('estimated_cost', 'actual_cost'),
         }),
         ('Metadata', {
@@ -62,3 +63,10 @@ class CreditTransactionAdmin(admin.ModelAdmin):
     list_filter = ['transaction_type', 'team', 'created_at']
     search_fields = ['user__email', 'description', 'stripe_charge_id']
     readonly_fields = ['id', 'created_at', 'updated_at']
+
+
+@admin.register(AnalysisPricingRate)
+class AnalysisPricingRateAdmin(admin.ModelAdmin):
+    list_display = ["analysis_type", "backend", "credits_per_million_voxels", "is_active", "updated_at"]
+    list_filter = ["analysis_type", "backend", "is_active"]
+    search_fields = ["analysis_type", "backend"]

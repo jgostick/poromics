@@ -31,13 +31,11 @@ cancel_job(job_id)
 """
 
 import io
+import logging
 import os
 import subprocess
-import sys
 import time
-import logging
 from pathlib import Path
-from typing import Optional
 
 import httpx
 import numpy as np
@@ -48,7 +46,7 @@ SERVER_PORT = int(os.environ.get("JULIA_SERVER_PORT", "2999"))
 SERVER_URL  = f"http://127.0.0.1:{SERVER_PORT}"
 STARTUP_TIMEOUT = 600  # seconds — Julia warmup can take several minutes on first run
 
-_server_proc: Optional[subprocess.Popen] = None
+_server_proc: subprocess.Popen | None = None
 
 
 def _server_healthy() -> bool:
@@ -162,7 +160,7 @@ def submit_job(
     axis: str,
     reltol: float,
     use_gpu: bool,
-    D: Optional[np.ndarray] = None,
+    D: np.ndarray | None = None,
 ) -> str:
     """Submit an image for tortuosity calculation.  Returns a job ID immediately.
 
@@ -199,7 +197,7 @@ def submit_job(
     return resp.json()["job_id"]
 
 
-def poll_job(job_id: str) -> Optional[tuple]:
+def poll_job(job_id: str) -> tuple | None:
     """Poll a job.  Returns None if still running, or (tau, conc) when done.
 
     Raises RuntimeError on server-side failure.

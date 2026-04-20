@@ -6,6 +6,51 @@
 
   {% include "dashboard/site_admin/_subnav.html" %}
 
+  <div class="card bg-base-100 shadow-sm mb-6">
+    <div class="card-body">
+      <h2 class="card-title text-lg">{% translate "Add Credits" %}</h2>
+
+      {% if form.non_field_errors %}
+        <div class="alert alert-error">
+          {{ form.non_field_errors }}
+        </div>
+      {% endif %}
+
+      <form method="post" class="space-y-4">
+        {% csrf_token %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="label label-text text-xs" for="{{ form.team.id_for_label }}">{{ form.team.label }}</label>
+            {{ form.team }}
+            {% if form.team.errors %}<p class="text-error text-sm mt-1">{{ form.team.errors|join:", " }}</p>{% endif %}
+          </div>
+          <div>
+            <label class="label label-text text-xs" for="{{ form.user.id_for_label }}">{{ form.user.label }}</label>
+            {{ form.user }}
+            {% if form.user.errors %}<p class="text-error text-sm mt-1">{{ form.user.errors|join:", " }}</p>{% endif %}
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="label label-text text-xs" for="{{ form.amount.id_for_label }}">{{ form.amount.label }}</label>
+            {{ form.amount }}
+            {% if form.amount.errors %}<p class="text-error text-sm mt-1">{{ form.amount.errors|join:", " }}</p>{% endif %}
+          </div>
+          <div>
+            <label class="label label-text text-xs" for="{{ form.description.id_for_label }}">{{ form.description.label }}</label>
+            {{ form.description }}
+            {% if form.description.errors %}<p class="text-error text-sm mt-1">{{ form.description.errors|join:", " }}</p>{% endif %}
+          </div>
+        </div>
+
+        <div>
+          <button type="submit" class="btn btn-primary btn-sm">{% translate "Add Credits" %}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="overflow-x-auto">
     <table class="table table-sm w-full">
       <thead>
@@ -25,17 +70,17 @@
           <td class="text-right font-mono">
             {% if team.balance is not None %}
               <span class="{% if team.balance >= 0 %}text-success{% else %}text-error{% endif %}">
-                ${{ team.balance|floatformat:2 }}
+                {{ team.balance|floatformat:2 }}
               </span>
             {% else %}
-              <span class="opacity-50">$0.00</span>
+              <span class="opacity-50">0.00</span>
             {% endif %}
           </td>
           <td class="text-right font-mono">
-            {% if team.total_purchased is not None %}${{ team.total_purchased|floatformat:2 }}{% else %}<span class="opacity-50">—</span>{% endif %}
+            {% if team.total_purchased is not None %}{{ team.total_purchased|floatformat:2 }}{% else %}<span class="opacity-50">—</span>{% endif %}
           </td>
           <td class="text-right font-mono">
-            {% if team.total_used is not None %}${{ team.total_used|floatformat:2 }}{% else %}<span class="opacity-50">—</span>{% endif %}
+            {% if team.total_used is not None %}{{ team.total_used|floatformat:2 }}{% else %}<span class="opacity-50">—</span>{% endif %}
           </td>
         </tr>
         {% empty %}

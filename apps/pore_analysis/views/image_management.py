@@ -221,7 +221,7 @@ def upload_image(request, team_slug):
                 # Load and validate numpy array
                 try:
                     array = np.load(temp_file_path, allow_pickle=False).astype(bool)
-                except Exception as e:
+                except Exception:
                     os.unlink(temp_file_path)  # Clean up temp file
                     return JsonResponse({'success': False, 'message': _('Invalid .npy file format')})
                 
@@ -329,8 +329,8 @@ def _render_orthoslice(request, image, x_idx, y_idx, z_idx, zoom_factor=1.2):
     import base64
     from io import BytesIO
 
-    from PIL import Image
     import pyvista as pv
+    from PIL import Image
 
     # Memory-map for large files; fall back to regular load for cloud storage.
     try:

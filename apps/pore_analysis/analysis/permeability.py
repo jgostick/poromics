@@ -2,7 +2,7 @@
 
 def run_kabs_permeability(*, image_array, direction, max_iterations, tolerance, backend, voxel_size):
 
-    from kabs import solve_flow, compute_permeability
+    from kabs import compute_permeability, solve_flow
 
 
     soln = solve_flow(
