@@ -273,3 +273,63 @@ def run_network_extraction_job(self, job_id):
         job.error_message = str(exc)
         job.save(update_fields=["status", "completed_at", "error_message", "updated_at"])
         raise
+
+
+@shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 1})
+def run_network_validation_job(self, job_id):
+    """Run OpenPNM StokesFlow and FickianDiffusion on a stored pore-network artifact."""
+    job = AnalysisJob.objects.select_related("image").get(id=job_id)
+
+    job.status = JobStatus.PROCESSING
+    job.started_at = timezone.now()
+    job.progress_percentage = 5
+    job.error_message = ""
+    job.save(update_fields=["status", "started_at", "progress_percentage", "error_message", "updated_at"])
+
+    try:
+        from .models import AnalysisResult as AR
+
+        network_job_id = (job.parameters or {}).get("network_job_id")
+        if not network_job_id:
+            raise ValueError("Parameters missing 'network_job_id'.")
+
+        source_result = AR.objects.select_related("job__image").get(job_id=network_job_id)
+        net_dict = source_result.load_network_dict()
+        if net_dict is None:
+            raise ValueError(f"Network extraction job {network_job_id} has no stored network artifact.")
+
+        job.progress_percentage = 20
+        job.save(update_fields=["progress_percentage", "updated_at"])
+
+        from .analysis.network_validation import run_network_validation
+
+        solution = run_network_validation(
+            net_dict=net_dict,
+            params=job.parameters or {},
+            image_shape=list(job.image.dimensions),
+            voxel_size=float(job.image.voxel_size or 1.0),
+        )
+
+        job.progress_percentage = 90
+        job.save(update_fields=["progress_percentage", "updated_at"])
+
+        with transaction.atomic():
+            AnalysisResult.objects.update_or_create(
+                job=job,
+                defaults={"metrics": {"solution": solution}},
+            )
+            job.status = JobStatus.COMPLETED
+            job.completed_at = timezone.now()
+            job.progress_percentage = 100
+            job.save(update_fields=["status", "completed_at", "progress_percentage", "updated_at"])
+
+        return {"job_id": str(job.id), "status": "completed"}
+
+    except Exception as exc:
+        log.exception("Network validation job %s failed", job_id)
+        job.status = JobStatus.FAILED
+        job.completed_at = timezone.now()
+        job.error_message = str(exc)
+        job.save(update_fields=["status", "completed_at", "error_message", "updated_at"])
+        raise
+

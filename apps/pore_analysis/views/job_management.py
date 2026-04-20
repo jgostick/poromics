@@ -9,6 +9,7 @@ from .utils import (
     BASIC_CPU_QUEUE_MAP,
     JULIA_QUEUE_MAP,
     NETWORK_EXTRACTION_QUEUE_MAP,
+    NETWORK_VALIDATION_QUEUE_MAP,
     TAICHI_QUEUE_MAP,
     get_pore_analysis_context,
 )
@@ -63,6 +64,8 @@ def job_list(request, team_slug):
             queue_map = JULIA_QUEUE_MAP
         elif job.analysis_type == AnalysisType.NETWORK_EXTRACTION:
             queue_map = NETWORK_EXTRACTION_QUEUE_MAP
+        elif job.analysis_type == AnalysisType.NETWORK_VALIDATION:
+            queue_map = NETWORK_VALIDATION_QUEUE_MAP
         elif job.analysis_type not in {AnalysisType.PERMEABILITY}:
             queue_map = BASIC_CPU_QUEUE_MAP
 

@@ -1,7 +1,5 @@
 {% load i18n %}
 
-{% load i18n %}
-
 <aside class="w-64 min-h-full bg-base-300 text-base-content">
   <div class="p-4 border-b border-base-200">
     <h2 class="text-lg font-bold text-base-content">{% translate "Pore Analysis" %}</h2>
@@ -67,21 +65,21 @@
       <ul class="menu gap-1 p-0">
         <li>
           <a href="/a/{{ team_slug }}/pore-analysis/analysis/permeability/"
-            class="flex items-center gap-3 {% if request.resolver_match.url_name == 'permeability_launch' %}active{% endif %}">
+             class="flex items-center gap-3 {% if request.resolver_match.url_name == 'permeability_launch' %}active{% endif %}">
             <i class="fa fa-water w-4 text-center"></i>
             <span>{% translate "Permeability" %}</span>
           </a>
         </li>
         <li>
           <a href="/a/{{ team_slug }}/pore-analysis/analysis/diffusivity/"
-            class="flex items-center gap-3 {% if request.resolver_match.url_name == 'diffusivity_launch' %}active{% endif %}">
+             class="flex items-center gap-3 {% if request.resolver_match.url_name == 'diffusivity_launch' %}active{% endif %}">
             <i class="fa-solid fa-hill-rockslide"></i>
             <span>{% translate "Diffusivity" %}</span>
           </a>
         </li>
         <li>
           <a href="/a/{{ team_slug }}/pore-analysis/analysis/poresize/"
-            class="flex items-center gap-3 {% if request.resolver_match.url_name == 'poresize_launch' %}active{% endif %}">
+             class="flex items-center gap-3 {% if request.resolver_match.url_name == 'poresize_launch' %}active{% endif %}">
             <i class="fa-solid fa-chart-simple"></i>
             <span>{% translate "Pore Size Distribution" %}</span>
           </a>
@@ -102,7 +100,8 @@
           </a>
         </li>
         <li>
-          <a href="/a/{{ team_slug }}/pore-analysis/network-validation/">
+          <a href="{% url 'pore_analysis_team:network_validation_launch' team_slug %}"
+             class="flex items-center gap-3 {% if request.resolver_match.url_name == 'network_validation_launch' %}active{% endif %}">
             <i class="fa-solid fa-vial-circle-check w-4 text-center"></i>
             <span>{% translate "Validation" %}</span>
           </a>

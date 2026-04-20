@@ -1,0 +1,76 @@
+{% extends "pore_analysis/analysis_launch_base.html" %}
+{% load i18n %}
+
+{% block launch_title %}{% translate "Network Validation" %}{% endblock %}
+{% block launch_heading %}{% translate "Launch Network Validation Job" %}{% endblock %}
+{% block launch_description %}
+  {% translate "Select an image, choose a completed network extraction job, then run OpenPNM permeability and diffusivity simulations." %}
+{% endblock %}
+
+{% block launch_help %}
+  <p class="text-base-content/70 mt-2">{% translate "To start the Celery queue, use:" %}</p>
+  <p class="text-base-content/70 mt-2">{% translate "uv run celery -A poromics worker -Q network-validation -n network-validation@%h --pool=solo -l INFO" %}</p>
+{% endblock %}
+
+{% block launch_form_fields %}
+  <div class="form-control">
+    <label class="label" for="{{ form.image.id_for_label }}">
+      <span class="label-text">{{ form.image.label }}</span>
+    </label>
+    <select
+      name="{{ form.image.html_name }}"
+      id="{{ form.image.id_for_label }}"
+      class="select select-bordered w-full"
+      hx-get="{% url 'pore_analysis_team:network_jobs_for_image' team_slug %}"
+      hx-target="#id_network_job"
+      hx-swap="innerHTML"
+      hx-trigger="change"
+      hx-include="this"
+    >
+      <option value="">{% translate "Select an image" %}</option>
+      {% for img in form.image.field.queryset %}
+        <option value="{{ img.pk }}"
+          {% if form.image.value == img.pk|stringformat:"s" %}selected{% endif %}>
+          {{ img.name }}
+        </option>
+      {% endfor %}
+    </select>
+    {% if form.image.errors %}
+      <p class="text-error text-sm mt-1">{{ form.image.errors|join:", " }}</p>
+    {% endif %}
+  </div>
+
+  <div class="form-control">
+    <label class="label" for="id_network_job">
+      <span class="label-text">{{ form.network_job.label }}</span>
+    </label>
+    <select name="{{ form.network_job.html_name }}" id="id_network_job" class="select select-bordered w-full">
+      {% if form.network_job.field.queryset.exists %}
+        <option value="">{% translate "Select a network extraction job" %}</option>
+        {% for job in form.network_job.field.queryset %}
+          <option value="{{ job.pk }}"
+            {% if form.network_job.value == job.pk|stringformat:"s" %}selected{% endif %}>
+            {{ job.created_at|date:"Y-m-d H:i" }} — {{ job.parameters.method|default:"" }}
+            ({{ job.result.metrics.solution.pore_count|default:"?" }} pores)
+          </option>
+        {% endfor %}
+      {% else %}
+        <option value="">{% translate "Select an image first" %}</option>
+      {% endif %}
+    </select>
+    {% if form.network_job.errors %}
+      <p class="text-error text-sm mt-1">{{ form.network_job.errors|join:", " }}</p>
+    {% endif %}
+  </div>
+
+  {% include "pore_analysis/components/form_field.html" with field=form.direction %}
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    {% include "pore_analysis/components/form_field.html" with field=form.pore_diameter_key %}
+    {% include "pore_analysis/components/form_field.html" with field=form.throat_diameter_key %}
+  </div>
+
+  {% include "pore_analysis/components/form_field.html" with field=form.shape_model %}
+{% endblock %}
+
+{% block launch_submit_label %}{% translate "Queue Network Validation Job" %}{% endblock %}

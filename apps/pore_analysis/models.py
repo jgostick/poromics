@@ -1,6 +1,7 @@
 import uuid
 import os
 import pickle
+import json
 from decimal import Decimal
 from django.db import models
 from django.contrib.auth import get_user_model
@@ -181,6 +182,7 @@ class UploadedImage(BaseTeamModel):
 class AnalysisType(models.TextChoices):
     """Available types of pore analysis."""
     NETWORK_EXTRACTION = 'network_extraction', _('Pore Network Extraction')
+    NETWORK_VALIDATION = 'network_validation', _('Network Validation')
     PERMEABILITY = 'permeability', _('Permeability Calculation')
     DIFFUSIVITY = 'diffusivity', _('Diffusivity Calculation')
     MORPHOLOGY = 'morphology', _('Morphological Analysis')
@@ -266,7 +268,17 @@ class AnalysisResult(BaseModel):
             return None
 
         with self.network_file.open("rb") as f:
-            obj = pickle.load(f)
+            raw = f.read()
+
+        # New format: pickle payload preserving numpy arrays.
+        try:
+            obj = pickle.loads(raw)
+        except Exception:
+            # Legacy format: JSON payload (starts with '{').
+            try:
+                obj = json.loads(raw.decode("utf-8"))
+            except Exception as exc:
+                raise ValueError("Stored network payload is neither pickle nor JSON.") from exc
 
         if not isinstance(obj, dict):
             raise ValueError("Stored network payload is not a dict.")
@@ -278,10 +290,31 @@ class AnalysisResult(BaseModel):
         if payload is None:
             return None
 
-        # New format: {"net": {...}}, legacy format: {...}
+        # Preferred format: {"net": {...}}
         if "net" in payload and isinstance(payload["net"], dict):
-            return payload["net"]
-        return payload
+            net_dict = payload["net"]
+
+        # Legacy format used during earlier rollout: {"method": ..., "network": {...}}
+        elif "network" in payload and isinstance(payload["network"], dict):
+            net_dict = payload["network"]
+
+        # Direct network dict format
+        elif any(str(key).startswith(("pore.", "throat.")) for key in payload):
+            net_dict = payload
+
+        else:
+            raise ValueError("Stored network payload does not contain a usable network dictionary.")
+
+        # Some legacy JSON artifacts deserialize arrays as Python lists.
+        # OpenPNM expects ndarray-like values with .shape for pore/throat fields.
+        normalized: dict = {}
+        for key, value in net_dict.items():
+            if str(key).startswith(("pore.", "throat.")) and isinstance(value, list):
+                normalized[key] = np.asarray(value)
+            else:
+                normalized[key] = value
+
+        return normalized
 
 
 class CreditTransaction(BaseTeamModel):

@@ -30,6 +30,10 @@ NETWORK_EXTRACTION_QUEUE_MAP = {
     "parallel": "network-parallel",
 }
 
+NETWORK_VALIDATION_QUEUE_MAP = {
+    "cpu": "network-validation",
+}
+
 
 def _celery_queue_ready(queue_name: str, timeout: float = 1.5) -> tuple[bool, str]:
     """

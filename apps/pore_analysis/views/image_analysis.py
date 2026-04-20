@@ -9,6 +9,7 @@ from kombu.exceptions import OperationalError
 from apps.pore_analysis.forms import (
     DiffusivityLaunchForm,
     NetworkExtractionLaunchForm,
+    NetworkValidationLaunchForm,
     PermeabilityLaunchForm,
     PoreSizeLaunchForm,
 )
@@ -16,6 +17,7 @@ from apps.pore_analysis.models import AnalysisJob, AnalysisType, JobStatus, Uplo
 from apps.pore_analysis.tasks import (
     run_diffusivity_job,
     run_network_extraction_job,
+    run_network_validation_job,
     run_permeability_job,
     run_poresize_job,
 )
@@ -25,6 +27,7 @@ from .utils import (
     BASIC_CPU_QUEUE_MAP,
     JULIA_QUEUE_MAP,
     NETWORK_EXTRACTION_QUEUE_MAP,
+    NETWORK_VALIDATION_QUEUE_MAP,
     TAICHI_QUEUE_MAP,
     get_pore_analysis_context,
 )
@@ -300,3 +303,79 @@ def network_extraction_launch(request, team_slug):
     }
     context.update(get_pore_analysis_context(request))
     return render(request, "pore_analysis/network_extraction_launch.html", context)
+
+
+@login_and_team_required
+def network_validation_launch(request, team_slug):
+    if request.method == "POST":
+        form = NetworkValidationLaunchForm(request.team, request.POST)
+        if form.is_valid():
+            image = form.cleaned_data["image"]
+            params = form.to_parameters()
+            queue = NETWORK_VALIDATION_QUEUE_MAP["cpu"]
+
+            ok, reason = _broker_ready(run_network_validation_job.app)
+            if not ok:
+                messages.error(request, _("Queue service unavailable. %(reason)s") % {"reason": reason})
+                return redirect("pore_analysis_team:network_validation_launch", team_slug=team_slug)
+
+            job = AnalysisJob.objects.create(
+                team=request.team,
+                image=image,
+                analysis_type=AnalysisType.NETWORK_VALIDATION,
+                started_by=request.user,
+                estimated_cost=Decimal("0.00"),
+                parameters=params,
+                status=JobStatus.PENDING,
+            )
+
+            try:
+                task = run_network_validation_job.apply_async(args=[str(job.id)], queue=queue)
+            except Exception as exc:
+                job.status = JobStatus.FAILED
+                job.error_message = f"Failed to enqueue task: {exc}"
+                job.completed_at = timezone.now()
+                job.save(update_fields=["status", "error_message", "completed_at", "updated_at"])
+                messages.error(
+                    request,
+                    _("Could not queue job on '%(queue)s'. %(reason)s") % {
+                        "queue": queue,
+                        "reason": str(exc),
+                    },
+                )
+                return redirect("pore_analysis_team:network_validation_launch", team_slug=team_slug)
+
+            job.celery_task_id = task.id
+            job.save(update_fields=["celery_task_id", "updated_at"])
+            messages.success(request, _("Network validation job queued."))
+            return redirect("pore_analysis_team:job_detail", team_slug=team_slug, job_id=job.id)
+    else:
+        form = NetworkValidationLaunchForm(request.team)
+
+    context = {
+        "form": form,
+        "team_slug": team_slug,
+    }
+    context.update(get_pore_analysis_context(request))
+    return render(request, "pore_analysis/network_validation_launch.html", context)
+
+
+@login_and_team_required
+def network_jobs_for_image(request, team_slug):
+    """HTMX endpoint: return <option> elements for completed network extraction jobs for a given image."""
+    from apps.pore_analysis.models import AnalysisJob, AnalysisType, JobStatus
+
+    image_id = (request.GET.get("image") or "").strip()
+    jobs = AnalysisJob.objects.none()
+    if image_id:
+        jobs = AnalysisJob.objects.filter(
+            team=request.team,
+            image_id=image_id,
+            analysis_type=AnalysisType.NETWORK_EXTRACTION,
+            status=JobStatus.COMPLETED,
+            result__network_file__isnull=False,
+        ).exclude(
+            result__network_file="",
+        ).order_by("-created_at")
+
+    return render(request, "pore_analysis/components/network_job_options.html", {"jobs": jobs})

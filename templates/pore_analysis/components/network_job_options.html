@@ -1,0 +1,7 @@
+{% load i18n %}
+<option value="">{% translate "Select a network extraction job" %}</option>
+{% for job in jobs %}
+  <option value="{{ job.id }}">{{ job.created_at|date:"Y-m-d H:i" }} — {{ job.parameters.method|default:"" }} ({{ job.result.metrics.solution.pore_count|default:"?" }} pores)</option>
+{% empty %}
+  <option value="" disabled>{% translate "No completed extraction jobs for this image" %}</option>
+{% endfor %}

@@ -95,6 +95,35 @@
       {% endif %}
       {% endif %}
 
+      {% if job.analysis_type == 'network_validation' and job.result.metrics.solution %}
+      <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+        <div>
+          <span class="text-base-content/70">{% translate "Permeability (K)" %}:</span>
+          {{ job.result.metrics.solution.permeability|floatformat:6 }}
+        </div>
+        <div>
+          <span class="text-base-content/70">{% translate "Effective Diffusivity (Deff)" %}:</span>
+          {{ job.result.metrics.solution.effective_diffusivity|floatformat:6 }}
+        </div>
+        <div>
+          <span class="text-base-content/70">{% translate "Direction" %}:</span>
+          {{ job.result.metrics.solution.direction|upper }}
+        </div>
+        <div>
+          <span class="text-base-content/70">{% translate "Pores (trimmed)" %}:</span>
+          {{ job.result.metrics.solution.pore_count|default:"-" }}
+        </div>
+        <div>
+          <span class="text-base-content/70">{% translate "Throats (trimmed)" %}:</span>
+          {{ job.result.metrics.solution.throat_count|default:"-" }}
+        </div>
+        <div>
+          <span class="text-base-content/70">{% translate "Shape model" %}:</span>
+          {{ job.result.metrics.solution.shape_model|default:"-" }}
+        </div>
+      </div>
+      {% endif %}
+
       <details class="mt-4">
         <summary class="cursor-pointer text-sm text-base-content/70 hover:text-base-content">
           {% translate "Raw result data" %}
@@ -121,4 +150,4 @@
   });
 </script>
 {% endif %}
-{% endblock page_js %}
+{% endblock %}
