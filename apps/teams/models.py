@@ -43,7 +43,7 @@ class Team(BaseModel):
 
     @property
     def dashboard_url(self) -> str:
-        return reverse("web_team:home", args=[self.slug])
+        return reverse("pore_analysis_team:dashboard", args=[self.slug])
 
 
 class Membership(BaseModel):

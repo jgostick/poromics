@@ -14,7 +14,7 @@ def home(request):
     if request.user.is_authenticated:
         team = request.default_team
         if team:
-            return HttpResponseRedirect(reverse("web_team:home", args=[team.slug]))
+            return HttpResponseRedirect(reverse("pore_analysis_team:dashboard", args=[team.slug]))
         else:
             if (open_invitations := get_open_invitations_for_user(request.user)) and len(open_invitations) > 1:
                 invitation = open_invitations[0]

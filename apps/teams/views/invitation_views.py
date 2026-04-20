@@ -29,7 +29,7 @@ def accept_invitation(request, invitation_id):
                 team=invitation.team.name
             ),
         )
-        return HttpResponseRedirect(reverse("web_team:home", args=[invitation.team.slug]))
+        return HttpResponseRedirect(reverse("pore_analysis_team:dashboard", args=[invitation.team.slug]))
 
     if request.method == "POST":
         # accept invitation workflow
