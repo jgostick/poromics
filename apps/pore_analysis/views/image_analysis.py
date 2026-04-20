@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.contrib import messages
+from django.conf import settings
 from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -93,6 +94,14 @@ def _create_job_with_upfront_charge(*, team, user, image, analysis_type: str, pa
     return job
 
 
+def _with_routing_metadata(parameters: dict, *, queue: str, endpoint_url: str | None = None) -> dict:
+    enriched = dict(parameters)
+    enriched["queue_name"] = queue
+    if endpoint_url:
+        enriched["endpoint_url"] = endpoint_url
+    return enriched
+
+
 def _mark_enqueue_failure_with_refund(job: AnalysisJob, exc: Exception) -> None:
     with transaction.atomic():
         refund_job_charge(job, reason="failed to enqueue")
@@ -163,11 +172,24 @@ def permeability_launch(request, team_slug):
             image = form.cleaned_data["image"]
             params = form.to_parameters()
             queue = TAICHI_QUEUE_MAP.get(params["backend"], "kabs-cpu")
+            endpoint = settings.TAICHI_QUEUE_ENDPOINTS.get(queue, settings.TAICHI_DEFAULT_SERVER_URL).strip()
+            job_params = _with_routing_metadata(params, queue=queue, endpoint_url=endpoint or None)
 
             ok, reason = _broker_ready(run_permeability_job.app)
             if not ok:
                 messages.error(request, _("Queue service unavailable. %(reason)s") % {"reason": reason})
                 return redirect("pore_analysis_team:permeability_launch", team_slug=team_slug)
+
+            if endpoint:
+                from taichi_client import _server_healthy as _taichi_server_healthy
+
+                if not _taichi_server_healthy(endpoint):
+                    messages.error(
+                        request,
+                        _("Taichi service for queue '%(queue)s' is unreachable at %(endpoint)s.")
+                        % {"queue": queue, "endpoint": endpoint},
+                    )
+                    return redirect("pore_analysis_team:permeability_launch", team_slug=team_slug)
 
             try:
                 job = _create_job_with_upfront_charge(
@@ -175,7 +197,7 @@ def permeability_launch(request, team_slug):
                     user=request.user,
                     image=image,
                     analysis_type=AnalysisType.PERMEABILITY,
-                    parameters=params,
+                    parameters=job_params,
                 )
             except (NoPricingRateError, InsufficientCreditsError) as exc:
                 return _handle_pricing_errors(
@@ -189,10 +211,16 @@ def permeability_launch(request, team_slug):
                 task = run_permeability_job.apply_async(args=[str(job.id)], queue=queue)
             except Exception as exc:
                 _mark_enqueue_failure_with_refund(job, exc)
+                error_template = _("Could not queue job on '%(queue)s'. %(reason)s")
+                if endpoint:
+                    error_template = _(
+                        "Could not queue job on '%(queue)s' (endpoint %(endpoint)s). %(reason)s"
+                    )
                 messages.error(
                     request,
-                    _("Could not queue job on '%(queue)s'. %(reason)s") % {
+                    error_template % {
                         "queue": queue,
+                        "endpoint": endpoint,
                         "reason": str(exc),
                     },
                 )
@@ -221,10 +249,22 @@ def diffusivity_launch(request, team_slug):
             image = form.cleaned_data["image"]
             params = form.to_parameters()
             queue = JULIA_QUEUE_MAP.get(params["backend"], "julia-cpu")
+            endpoint = settings.JULIA_QUEUE_ENDPOINTS.get(queue, settings.JULIA_DEFAULT_SERVER_URL)
+            job_params = _with_routing_metadata(params, queue=queue, endpoint_url=endpoint)
 
             ok, reason = _broker_ready(run_diffusivity_job.app)
             if not ok:
                 messages.error(request, _("Queue service unavailable. %(reason)s") % {"reason": reason})
+                return redirect("pore_analysis_team:diffusivity_launch", team_slug=team_slug)
+
+            from julia_client import _server_healthy
+
+            if not _server_healthy(endpoint):
+                messages.error(
+                    request,
+                    _("Julia service for queue '%(queue)s' is unreachable at %(endpoint)s.")
+                    % {"queue": queue, "endpoint": endpoint},
+                )
                 return redirect("pore_analysis_team:diffusivity_launch", team_slug=team_slug)
 
             try:
@@ -233,7 +273,7 @@ def diffusivity_launch(request, team_slug):
                     user=request.user,
                     image=image,
                     analysis_type=AnalysisType.DIFFUSIVITY,
-                    parameters=params,
+                    parameters=job_params,
                 )
             except (NoPricingRateError, InsufficientCreditsError) as exc:
                 return _handle_pricing_errors(
@@ -249,8 +289,9 @@ def diffusivity_launch(request, team_slug):
                 _mark_enqueue_failure_with_refund(job, exc)
                 messages.error(
                     request,
-                    _("Could not queue job on '%(queue)s'. %(reason)s") % {
+                    _("Could not queue job on '%(queue)s' (endpoint %(endpoint)s). %(reason)s") % {
                         "queue": queue,
+                        "endpoint": endpoint,
                         "reason": str(exc),
                     },
                 )
@@ -296,6 +337,7 @@ def pore_size_launch(request, team_slug):
             #    If your form has no backend field, hardcode queue instead.
             queue_key = params.get("backend", "cpu")
             queue = QUEUE_MAP.get(queue_key, DEFAULT_QUEUE)
+            job_params = _with_routing_metadata(params, queue=queue)
 
             # 4) Ensure broker connectivity before creating enqueue side effects
             ok, reason = _broker_ready(TASK_FUNCTION.app)
@@ -310,7 +352,7 @@ def pore_size_launch(request, team_slug):
                     user=request.user,
                     image=image,
                     analysis_type=ANALYSIS_TYPE_ENUM,
-                    parameters=params,
+                    parameters=job_params,
                 )
             except (NoPricingRateError, InsufficientCreditsError) as exc:
                 return _handle_pricing_errors(request, exc, REDIRECT_NAME_ON_ERROR, team_slug)
@@ -357,6 +399,7 @@ def network_extraction_launch(request, team_slug):
             image = form.cleaned_data["image"]
             params = form.to_parameters()
             queue = NETWORK_EXTRACTION_QUEUE_MAP.get(params["backend"], "network-cpu")
+            job_params = _with_routing_metadata(params, queue=queue)
 
             ok, reason = _broker_ready(run_network_extraction_job.app)
             if not ok:
@@ -369,7 +412,7 @@ def network_extraction_launch(request, team_slug):
                     user=request.user,
                     image=image,
                     analysis_type=AnalysisType.NETWORK_EXTRACTION,
-                    parameters=params,
+                    parameters=job_params,
                 )
             except (NoPricingRateError, InsufficientCreditsError) as exc:
                 return _handle_pricing_errors(
@@ -416,6 +459,7 @@ def network_validation_launch(request, team_slug):
             image = form.cleaned_data["image"]
             params = form.to_parameters()
             queue = NETWORK_VALIDATION_QUEUE_MAP["cpu"]
+            job_params = _with_routing_metadata(params, queue=queue)
 
             ok, reason = _broker_ready(run_network_validation_job.app)
             if not ok:
@@ -428,7 +472,7 @@ def network_validation_launch(request, team_slug):
                     user=request.user,
                     image=image,
                     analysis_type=AnalysisType.NETWORK_VALIDATION,
-                    parameters=params,
+                    parameters=job_params,
                 )
             except (NoPricingRateError, InsufficientCreditsError) as exc:
                 return _handle_pricing_errors(

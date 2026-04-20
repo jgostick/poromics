@@ -56,8 +56,15 @@ def job_list(request, team_slug):
 
     # Derive backend and queue from existing JSON parameters (no schema change).
     for job in jobs:
-        backend = (job.parameters or {}).get("backend")
+        params = job.parameters or {}
+        backend = params.get("backend")
         job.backend_name = backend or "-"
+        job.endpoint_url = params.get("endpoint_url") or "-"
+
+        saved_queue_name = params.get("queue_name")
+        if saved_queue_name:
+            job.queue_name = saved_queue_name
+            continue
 
         queue_map = TAICHI_QUEUE_MAP
         if job.analysis_type == AnalysisType.DIFFUSIVITY:

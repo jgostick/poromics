@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db.models import Sum
 from django.shortcuts import render
 from kombu.exceptions import OperationalError
@@ -6,24 +7,32 @@ from apps.pore_analysis.models import AnalysisJob, AnalysisType, CreditTransacti
 from apps.pore_analysis.tasks import run_permeability_job  # add to imports at top of file
 from apps.teams.decorators import login_and_team_required
 
-TAICHI_QUEUE_MAP = {
-    "cpu": "kabs-cpu",
-    "gpu": "kabs-gpu",
-    "metal": "kabs-metal",
-    "cuda": "kabs-cuda",
-    "opengl": "kabs-opengl",
-}
+TAICHI_QUEUE_MAP = getattr(
+    settings,
+    "TAICHI_BACKEND_QUEUE_MAP",
+    {
+        "cpu": "kabs-cpu",
+        "gpu": "kabs-gpu",
+        "metal": "kabs-metal",
+        "cuda": "kabs-cuda",
+        "opengl": "kabs-opengl",
+    },
+)
 
 BASIC_CPU_QUEUE_MAP = {
     "cpu": "basic-cpu",
 }
 
-JULIA_QUEUE_MAP = {
-    "cpu": "julia-cpu",
-    "gpu": "julia-gpu",
-    "metal": "julia-metal",
-    "cuda": "julia-cuda",
-}
+JULIA_QUEUE_MAP = getattr(
+    settings,
+    "JULIA_BACKEND_QUEUE_MAP",
+    {
+        "cpu": "julia-cpu",
+        "gpu": "julia-gpu",
+        "metal": "julia-metal",
+        "cuda": "julia-cuda",
+    },
+)
 
 NETWORK_EXTRACTION_QUEUE_MAP = {
     "cpu": "network-cpu",

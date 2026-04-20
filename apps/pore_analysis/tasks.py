@@ -5,6 +5,7 @@ from decimal import Decimal
 import numpy as np
 from celery import shared_task
 from celery.signals import worker_process_init
+from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.utils import timezone
@@ -25,6 +26,24 @@ def _fail_job_with_refund(job: AnalysisJob, exc: Exception) -> None:
         refund_job_charge(job, reason="job failed")
 
 
+def _get_task_queue_name(task_request, default_queue: str) -> str:
+    delivery_info = getattr(task_request, "delivery_info", None) or {}
+    queue_name = delivery_info.get("routing_key")
+    return str(queue_name or default_queue)
+
+
+def _resolve_taichi_endpoint(queue_name: str) -> str:
+    queue_endpoints = getattr(settings, "TAICHI_QUEUE_ENDPOINTS", {})
+    default_endpoint = getattr(settings, "TAICHI_DEFAULT_SERVER_URL", "")
+    return str(queue_endpoints.get(queue_name, default_endpoint)).strip()
+
+
+def _resolve_julia_endpoint(queue_name: str) -> str:
+    queue_endpoints = getattr(settings, "JULIA_QUEUE_ENDPOINTS", {})
+    default_endpoint = getattr(settings, "JULIA_DEFAULT_SERVER_URL", "http://127.0.0.1:2999")
+    return str(queue_endpoints.get(queue_name, default_endpoint))
+
+
 @shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 1})
 def run_permeability_job(self, job_id):
     job = AnalysisJob.objects.select_related("image").get(id=job_id)
@@ -36,6 +55,18 @@ def run_permeability_job(self, job_id):
     job.save(update_fields=["status", "started_at", "progress_percentage", "error_message", "updated_at"])
 
     try:
+        queue_name = _get_task_queue_name(self.request, default_queue="kabs-cpu")
+        endpoint_url = _resolve_taichi_endpoint(queue_name)
+
+        if endpoint_url:
+            from taichi_client import _server_healthy as _taichi_server_healthy
+
+            if not _taichi_server_healthy(endpoint_url):
+                raise RuntimeError(
+                    f"Taichi permeability service is unreachable for queue '{queue_name}' "
+                    f"at {endpoint_url}."
+                )
+
         with job.image.file.open("rb") as f:
             arr = np.load(f, allow_pickle=False)
 
@@ -52,6 +83,7 @@ def run_permeability_job(self, job_id):
             tolerance=job.parameters["tolerance"],
             backend=job.parameters["backend"],
             voxel_size=job.image.voxel_size,
+            endpoint_url=endpoint_url or None,
         )
 
         job.progress_percentage = 90
@@ -106,12 +138,15 @@ def run_diffusivity_job(self, job_id):
     job.save(update_fields=["status", "started_at", "progress_percentage", "error_message", "updated_at"])
 
     try:
+        queue_name = _get_task_queue_name(self.request, default_queue="julia-cpu")
+        endpoint_url = _resolve_julia_endpoint(queue_name)
+
         # Verify the Julia service is reachable before loading the array.
         from julia_client import _server_healthy
-        if not _server_healthy():
+        if not _server_healthy(endpoint_url):
             raise RuntimeError(
-                "Julia tortuosity service is not running or unreachable. "
-                "Start it with: julia julia_server.jl"
+                f"Julia tortuosity service is unreachable for queue '{queue_name}' "
+                f"at {endpoint_url}."
             )
 
         with job.image.file.open("rb") as f:
@@ -127,6 +162,7 @@ def run_diffusivity_job(self, job_id):
             direction=job.parameters["direction"],
             tolerance=job.parameters["tolerance"],
             backend=job.parameters["backend"],
+            endpoint_url=endpoint_url,
         )
 
         job.progress_percentage = 90

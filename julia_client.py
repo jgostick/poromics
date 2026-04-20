@@ -36,30 +36,53 @@ import os
 import subprocess
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 import numpy as np
 
 log = logging.getLogger(__name__)
 
+SERVER_HOST = os.environ.get("JULIA_SERVER_HOST", "127.0.0.1")
 SERVER_PORT = int(os.environ.get("JULIA_SERVER_PORT", "2999"))
-SERVER_URL  = f"http://127.0.0.1:{SERVER_PORT}"
+DEFAULT_SERVER_URL = os.environ.get("JULIA_DEFAULT_SERVER_URL", f"http://{SERVER_HOST}:{SERVER_PORT}")
 STARTUP_TIMEOUT = 600  # seconds — Julia warmup can take several minutes on first run
 
 _server_proc: subprocess.Popen | None = None
 
 
-def _server_healthy() -> bool:
+def _resolve_server_url(endpoint_url: str | None = None) -> str:
+    return endpoint_url or DEFAULT_SERVER_URL
+
+
+def _is_local_endpoint(endpoint_url: str) -> bool:
     try:
-        r = httpx.get(f"{SERVER_URL}/health", timeout=2.0)
+        parsed = urlparse(endpoint_url)
+    except Exception:
+        return False
+    return parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+
+
+def _endpoint_host_port(endpoint_url: str) -> tuple[str, int]:
+    parsed = urlparse(endpoint_url)
+    host = parsed.hostname or SERVER_HOST
+    port = parsed.port or SERVER_PORT
+    return host, int(port)
+
+
+def _server_healthy(endpoint_url: str | None = None) -> bool:
+    server_url = _resolve_server_url(endpoint_url)
+    try:
+        r = httpx.get(f"{server_url}/health", timeout=2.0)
         return r.status_code == 200
     except Exception:
         return False
 
 
-def _server_health() -> dict:
+def _server_health(endpoint_url: str | None = None) -> dict:
+    server_url = _resolve_server_url(endpoint_url)
     try:
-        resp = httpx.get(f"{SERVER_URL}/health", timeout=2.0)
+        resp = httpx.get(f"{server_url}/health", timeout=2.0)
         resp.raise_for_status()
         data = resp.json()
         if isinstance(data, dict):
@@ -69,16 +92,22 @@ def _server_health() -> dict:
     return {"status": "unavailable", "gpus": 0}
 
 
-def ensure_server_running() -> None:
+def ensure_server_running(endpoint_url: str | None = None) -> None:
     """Start the Julia server if it is not already listening.
 
     Safe to call repeatedly — returns immediately if the server is up.
     Blocks (with a progress message) until Julia finishes its warmup.
     """
     global _server_proc
+    server_url = _resolve_server_url(endpoint_url)
 
-    if _server_healthy():
+    if _server_healthy(server_url):
         return
+
+    if not _is_local_endpoint(server_url):
+        raise RuntimeError(f"Remote Julia server is unreachable at {server_url}.")
+
+    server_host, server_port = _endpoint_host_port(server_url)
 
     project_root = Path(__file__).parent
     server_script = project_root / "julia_server.jl"
@@ -93,7 +122,8 @@ def ensure_server_running() -> None:
     env = {
         **os.environ,
         "JULIA_DEPOT_PATH": str(local_depot),
-        "JULIA_SERVER_PORT": str(SERVER_PORT),
+        "JULIA_SERVER_HOST": server_host,
+        "JULIA_SERVER_PORT": str(server_port),
         # Strip system CUDA paths so CUDA.jl uses its own bundled libraries.
         "LD_LIBRARY_PATH": ":".join(
             p for p in os.environ.get("LD_LIBRARY_PATH", "").split(":")
@@ -135,7 +165,7 @@ def ensure_server_running() -> None:
             raise RuntimeError(
                 f"Julia server exited with code {ret} before becoming ready.\n{out}"
             )
-        if _server_healthy():
+        if _server_healthy(server_url):
             log.info("Julia tortuosity server is ready.")
             return
         time.sleep(2)
@@ -145,10 +175,10 @@ def ensure_server_running() -> None:
     )
 
 
-def available_backends() -> list[str]:
+def available_backends(endpoint_url: str | None = None) -> list[str]:
     """Return DNS backend options supported by the Julia server."""
-    ensure_server_running()
-    health = _server_health()
+    ensure_server_running(endpoint_url)
+    health = _server_health(endpoint_url)
     options = ["cpu"]
     if int(health.get("gpus", 0) or 0) > 0:
         options.append("gpu")
@@ -161,6 +191,7 @@ def submit_job(
     reltol: float,
     use_gpu: bool,
     D: np.ndarray | None = None,
+    endpoint_url: str | None = None,
 ) -> str:
     """Submit an image for tortuosity calculation.  Returns a job ID immediately.
 
@@ -188,8 +219,11 @@ def submit_job(
         dbuf.seek(0)
         files["D"] = ("D.npy", dbuf, "application/octet-stream")
 
+    ensure_server_running(endpoint_url)
+    server_url = _resolve_server_url(endpoint_url)
+
     resp = httpx.post(
-        f"{SERVER_URL}/tortuosity",
+        f"{server_url}/tortuosity",
         files=files,
         timeout=30.0,
     )
@@ -197,12 +231,13 @@ def submit_job(
     return resp.json()["job_id"]
 
 
-def poll_job(job_id: str) -> tuple | None:
+def poll_job(job_id: str, endpoint_url: str | None = None) -> tuple | None:
     """Poll a job.  Returns None if still running, or (tau, conc) when done.
 
     Raises RuntimeError on server-side failure.
     """
-    resp = httpx.get(f"{SERVER_URL}/job/{job_id}", timeout=10.0)
+    server_url = _resolve_server_url(endpoint_url)
+    resp = httpx.get(f"{server_url}/job/{job_id}", timeout=10.0)
     resp.raise_for_status()
     data = resp.json()
 
@@ -214,18 +249,19 @@ def poll_job(job_id: str) -> tuple | None:
 
     # status == "done" — fetch the concentration field
     tau = float(data["tau"])
-    conc_resp = httpx.get(f"{SERVER_URL}/job/{job_id}/conc", timeout=30.0)
+    conc_resp = httpx.get(f"{server_url}/job/{job_id}/conc", timeout=30.0)
     conc_resp.raise_for_status()
     conc = np.load(io.BytesIO(conc_resp.content))["conc"]
 
     # Clean up the job from the server store
-    cancel_job(job_id)
+    cancel_job(job_id, endpoint_url=endpoint_url)
     return tau, conc
 
 
-def cancel_job(job_id: str) -> None:
+def cancel_job(job_id: str, endpoint_url: str | None = None) -> None:
     """Cancel / remove a job from the server (best-effort, ignores errors)."""
+    server_url = _resolve_server_url(endpoint_url)
     try:
-        httpx.delete(f"{SERVER_URL}/job/{job_id}", timeout=5.0)
+        httpx.delete(f"{server_url}/job/{job_id}", timeout=5.0)
     except Exception:
         pass

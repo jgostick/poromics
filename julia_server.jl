@@ -299,5 +299,6 @@ end
 warmup()
 
 const PORT = parse(Int, get(ENV, "JULIA_SERVER_PORT", "2999"))
-@info "Julia tortuosity server listening" port=PORT
-HTTP.serve(ROUTER, "127.0.0.1", PORT)
+const HOST = get(ENV, "JULIA_SERVER_HOST", "127.0.0.1")
+@info "Julia tortuosity server listening" host=HOST port=PORT
+HTTP.serve(ROUTER, HOST, PORT)

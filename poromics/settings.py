@@ -448,6 +448,72 @@ CACHES = {
     "default": DUMMY_CACHE if DEBUG else REDIS_CACHE,
 }
 
+# Julia tortuosity service routing
+JULIA_SERVER_HOST = env("JULIA_SERVER_HOST", default="127.0.0.1")
+JULIA_SERVER_PORT = env("JULIA_SERVER_PORT", default="2999")
+JULIA_DEFAULT_SERVER_URL = env(
+    "JULIA_DEFAULT_SERVER_URL",
+    default=f"http://{JULIA_SERVER_HOST}:{JULIA_SERVER_PORT}",
+)
+
+# Backend-to-queue mapping used by diffusivity launch form choices.
+JULIA_BACKEND_QUEUE_MAP = {
+    "cpu": env("JULIA_QUEUE_CPU", default="julia-cpu"),
+    "gpu": env("JULIA_QUEUE_GPU", default="julia-gpu"),
+    "metal": env("JULIA_QUEUE_METAL", default="julia-metal"),
+    "cuda": env("JULIA_QUEUE_CUDA", default="julia-cuda"),
+}
+
+
+def _parse_queue_endpoint_pairs(raw_pairs: list[str]) -> dict[str, str]:
+    """Parse QUEUE=URL strings from env into a queue-to-endpoint mapping."""
+    mapping: dict[str, str] = {}
+    for pair in raw_pairs:
+        item = pair.strip()
+        if not item or "=" not in item:
+            continue
+        queue_name, endpoint_url = item.split("=", 1)
+        queue_name = queue_name.strip()
+        endpoint_url = endpoint_url.strip()
+        if queue_name and endpoint_url:
+            mapping[queue_name] = endpoint_url
+    return mapping
+
+
+# Optional queue-scoped overrides, for example:
+# JULIA_QUEUE_ENDPOINTS="julia-gpu-remote1=http://192.168.1.50:2999"
+JULIA_QUEUE_ENDPOINTS = _parse_queue_endpoint_pairs(
+    env.list("JULIA_QUEUE_ENDPOINTS", default=[])
+)
+
+# Ensure standard Julia queues resolve even when no explicit override is set.
+for _queue_name in JULIA_BACKEND_QUEUE_MAP.values():
+    JULIA_QUEUE_ENDPOINTS.setdefault(_queue_name, JULIA_DEFAULT_SERVER_URL)
+
+# Taichi permeability service routing
+# Empty default keeps existing local in-process Taichi execution.
+TAICHI_DEFAULT_SERVER_URL = env("TAICHI_DEFAULT_SERVER_URL", default="")
+
+# Backend-to-queue mapping used by permeability launch form choices.
+TAICHI_BACKEND_QUEUE_MAP = {
+    "cpu": env("TAICHI_QUEUE_CPU", default="kabs-cpu"),
+    "gpu": env("TAICHI_QUEUE_GPU", default="kabs-gpu"),
+    "metal": env("TAICHI_QUEUE_METAL", default="kabs-metal"),
+    "cuda": env("TAICHI_QUEUE_CUDA", default="kabs-cuda"),
+    "opengl": env("TAICHI_QUEUE_OPENGL", default="kabs-opengl"),
+}
+
+# Optional queue-scoped overrides, for example:
+# TAICHI_QUEUE_ENDPOINTS="kabs-gpu-remote1=http://192.168.1.51:3000"
+TAICHI_QUEUE_ENDPOINTS = _parse_queue_endpoint_pairs(
+    env.list("TAICHI_QUEUE_ENDPOINTS", default=[])
+)
+
+# Respect an optional default endpoint for any queue without an explicit override.
+if TAICHI_DEFAULT_SERVER_URL:
+    for _queue_name in TAICHI_BACKEND_QUEUE_MAP.values():
+        TAICHI_QUEUE_ENDPOINTS.setdefault(_queue_name, TAICHI_DEFAULT_SERVER_URL)
+
 CELERY_BROKER_URL = CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 

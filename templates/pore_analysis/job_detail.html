@@ -51,6 +51,14 @@
           <span class="text-base-content/70">{% translate "Task ID" %}:</span>
           {{ job.celery_task_id|default:"-" }}
         </div>
+        <div>
+          <span class="text-base-content/70">{% translate "Queue" %}:</span>
+          {{ job.parameters.queue_name|default:"-" }}
+        </div>
+        <div>
+          <span class="text-base-content/70">{% translate "Endpoint" %}:</span>
+          {{ job.parameters.endpoint_url|default:"-" }}
+        </div>
       </div>
 
       {% if job.error_message %}

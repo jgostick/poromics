@@ -9,11 +9,13 @@ log = logging.getLogger(__name__)
 POLL_INTERVAL = 5
 
 
-def run_julia_diffusivity(*, image_array: np.ndarray, direction: str, tolerance: float, backend: str) -> dict:
+def run_julia_diffusivity(
+    *, image_array: np.ndarray, direction: str, tolerance: float, backend: str, endpoint_url: str | None = None
+) -> dict:
     """Submit a diffusivity calculation to the Julia tortuosity server and block until done.
 
-    The Julia server must already be running and reachable at the configured port
-    (JULIA_SERVER_PORT env var, default 2999).  This function is intended to be
+    The Julia server must already be running and reachable at the configured endpoint.
+    This function is intended to be
     called from a Celery worker task, never from a Django request handler.
 
     Parameters
@@ -26,6 +28,9 @@ def run_julia_diffusivity(*, image_array: np.ndarray, direction: str, tolerance:
         Relative solver tolerance (e.g. 1e-5).
     backend : str
         "cpu" or "gpu".  Any value other than "gpu" is treated as CPU.
+    endpoint_url : str | None
+        Optional full Julia server URL, for example http://192.168.1.50:2999.
+        If omitted, the default client endpoint configuration is used.
 
     Returns
     -------
@@ -52,11 +57,17 @@ def run_julia_diffusivity(*, image_array: np.ndarray, direction: str, tolerance:
         use_gpu,
         arr.shape,
     )
-    job_id = submit_job(img=arr, axis=direction, reltol=float(tolerance), use_gpu=use_gpu)
+    job_id = submit_job(
+        img=arr,
+        axis=direction,
+        reltol=float(tolerance),
+        use_gpu=use_gpu,
+        endpoint_url=endpoint_url,
+    )
     log.info("Julia job submitted: %s - polling every %ds", job_id, POLL_INTERVAL)
 
     while True:
-        result = poll_job(job_id)
+        result = poll_job(job_id, endpoint_url=endpoint_url)
         if result is not None:
             break
         log.debug("Julia job %s still running, sleeping %ds", job_id, POLL_INTERVAL)
