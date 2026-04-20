@@ -1,0 +1,48 @@
+{% extends "web/app/app_base.html" %}
+{% load i18n %}
+{% block app %}
+<section class="app-card">
+  <h1 class="pg-title">{% translate "Site Admin — Credits" %}</h1>
+
+  {% include "dashboard/site_admin/_subnav.html" %}
+
+  <div class="overflow-x-auto">
+    <table class="table table-sm w-full">
+      <thead>
+        <tr>
+          <th>{% translate "Team" %}</th>
+          <th class="text-right">{% translate "Balance" %}</th>
+          <th class="text-right">{% translate "Total Purchased" %}</th>
+          <th class="text-right">{% translate "Total Used" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for team in teams %}
+        <tr class="hover">
+          <td>
+            <a href="{{ team.dashboard_url }}" class="link link-hover">{{ team.name }}</a>
+          </td>
+          <td class="text-right font-mono">
+            {% if team.balance is not None %}
+              <span class="{% if team.balance >= 0 %}text-success{% else %}text-error{% endif %}">
+                ${{ team.balance|floatformat:2 }}
+              </span>
+            {% else %}
+              <span class="opacity-50">$0.00</span>
+            {% endif %}
+          </td>
+          <td class="text-right font-mono">
+            {% if team.total_purchased is not None %}${{ team.total_purchased|floatformat:2 }}{% else %}<span class="opacity-50">—</span>{% endif %}
+          </td>
+          <td class="text-right font-mono">
+            {% if team.total_used is not None %}${{ team.total_used|floatformat:2 }}{% else %}<span class="opacity-50">—</span>{% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4" class="text-center opacity-50">{% translate "No teams found." %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

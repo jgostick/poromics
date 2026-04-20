@@ -1,0 +1,140 @@
+{% extends "web/app/app_base.html" %}
+{% load i18n %}
+{% block app %}
+<section class="app-card">
+  <h1 class="pg-title">{% translate "Site Admin — Jobs" %}</h1>
+
+  {% include "dashboard/site_admin/_subnav.html" %}
+
+  {# Stats strip #}
+  <div class="stats stats-horizontal shadow mb-4 w-full overflow-x-auto">
+    <div class="stat">
+      <div class="stat-title">{% translate "Total" %}</div>
+      <div class="stat-value text-lg">{{ stats.total }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-title">{% translate "Pending" %}</div>
+      <div class="stat-value text-lg text-warning">{{ stats.pending }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-title">{% translate "Processing" %}</div>
+      <div class="stat-value text-lg text-info">{{ stats.processing }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-title">{% translate "Completed" %}</div>
+      <div class="stat-value text-lg text-success">{{ stats.completed }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-title">{% translate "Failed" %}</div>
+      <div class="stat-value text-lg text-error">{{ stats.failed }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-title">{% translate "Cancelled" %}</div>
+      <div class="stat-value text-lg">{{ stats.cancelled }}</div>
+    </div>
+  </div>
+
+  {# Filters #}
+  <form method="get" class="flex flex-wrap gap-2 mb-4 items-end">
+    <div>
+      <label class="label label-text text-xs">{% translate "Status" %}</label>
+      {{ form.status }}
+    </div>
+    <div>
+      <label class="label label-text text-xs">{% translate "Type" %}</label>
+      {{ form.analysis_type }}
+    </div>
+    <div>
+      <label class="label label-text text-xs">{% translate "Team" %}</label>
+      {{ form.team }}
+    </div>
+    <div>
+      <label class="label label-text text-xs">{% translate "From" %}</label>
+      {{ form.start }}
+    </div>
+    <div>
+      <label class="label label-text text-xs">{% translate "To" %}</label>
+      {{ form.end }}
+    </div>
+    <div>
+      <button type="submit" class="btn btn-primary btn-sm">{% translate "Filter" %}</button>
+      <a href="{% url 'dashboard:admin_jobs' %}" class="btn btn-ghost btn-sm">{% translate "Clear" %}</a>
+    </div>
+  </form>
+
+  {# Job table #}
+  <div class="overflow-x-auto">
+    <table class="table table-sm w-full">
+      <thead>
+        <tr>
+          <th>{% translate "Team" %}</th>
+          <th>{% translate "Image" %}</th>
+          <th>{% translate "Type" %}</th>
+          <th>{% translate "Status" %}</th>
+          <th>{% translate "Progress" %}</th>
+          <th>{% translate "Started by" %}</th>
+          <th>{% translate "Created" %}</th>
+          <th>{% translate "Cost" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in page_obj %}
+        <tr class="hover">
+          <td>{{ job.team.name }}</td>
+          <td class="max-w-xs truncate">{{ job.image.name }}</td>
+          <td>{{ job.get_analysis_type_display }}</td>
+          <td>
+            {% if job.status == 'completed' %}
+              <span class="badge badge-success badge-sm">{{ job.get_status_display }}</span>
+            {% elif job.status == 'failed' %}
+              <span class="badge badge-error badge-sm">{{ job.get_status_display }}</span>
+            {% elif job.status == 'processing' %}
+              <span class="badge badge-info badge-sm">{{ job.get_status_display }}</span>
+            {% elif job.status == 'pending' %}
+              <span class="badge badge-warning badge-sm">{{ job.get_status_display }}</span>
+            {% else %}
+              <span class="badge badge-sm">{{ job.get_status_display }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if job.status == 'processing' %}
+              <progress class="progress progress-info w-20" value="{{ job.progress_percentage }}" max="100"></progress>
+            {% else %}
+              {{ job.progress_percentage }}%
+            {% endif %}
+          </td>
+          <td>{{ job.started_by.email }}</td>
+          <td class="whitespace-nowrap">{{ job.created_at|date:"Y-m-d H:i" }}</td>
+          <td>
+            {% if job.actual_cost is not None %}${{ job.actual_cost }}
+            {% elif job.estimated_cost %}~${{ job.estimated_cost }}
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="text-center opacity-50">{% translate "No jobs found." %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# Pagination #}
+  {% if page_obj.has_other_pages %}
+  <div class="flex justify-center mt-4">
+    <div class="join">
+      {% if page_obj.has_previous %}
+        <a class="join-item btn btn-sm" href="?{% querystring page=page_obj.previous_page_number %}">«</a>
+      {% endif %}
+      <span class="join-item btn btn-sm btn-disabled">
+        {% blocktranslate trimmed with current=page_obj.number total=page_obj.paginator.num_pages %}
+          Page {{ current }} of {{ total }}
+        {% endblocktranslate %}
+      </span>
+      {% if page_obj.has_next %}
+        <a class="join-item btn btn-sm" href="?{% querystring page=page_obj.next_page_number %}">»</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

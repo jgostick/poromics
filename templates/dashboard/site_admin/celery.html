@@ -1,0 +1,118 @@
+{% extends "web/app/app_base.html" %}
+{% load i18n %}
+{% block app %}
+<section class="app-card">
+  <h1 class="pg-title">{% translate "Site Admin — Celery" %}</h1>
+
+  {% include "dashboard/site_admin/_subnav.html" %}
+
+  {# Broker status #}
+  <div class="mb-4">
+    <h2 class="pg-subtitle">{% translate "Broker" %}</h2>
+    {% if celery.broker_ok %}
+      <div class="alert alert-success alert-soft">
+        <i class="fa fa-check-circle mr-2"></i>{% translate "Broker is reachable." %}
+      </div>
+    {% else %}
+      <div class="alert alert-error alert-soft">
+        <i class="fa fa-exclamation-triangle mr-2"></i>
+        {% translate "Broker unreachable:" %} {{ celery.broker_error }}
+      </div>
+    {% endif %}
+  </div>
+
+  {% if celery.inspect_error %}
+    <div class="alert alert-warning alert-soft mb-4">
+      <i class="fa fa-warning mr-2"></i>
+      {% translate "Worker inspection failed:" %} {{ celery.inspect_error }}
+    </div>
+  {% endif %}
+
+  {# Workers #}
+  <div class="mb-4">
+    <h2 class="pg-subtitle">{% translate "Workers" %}</h2>
+    {% if celery.workers_detail %}
+      <div class="overflow-x-auto">
+        <table class="table table-sm w-full">
+          <thead>
+            <tr>
+              <th>{% translate "Worker" %}</th>
+              <th>{% translate "Status" %}</th>
+              <th>{% translate "Active queues" %}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for worker in celery.workers_detail %}
+            <tr class="hover">
+              <td class="font-mono text-xs">{{ worker.name }}</td>
+              <td>
+                <span class="badge badge-success badge-sm">{{ worker.status }}</span>
+              </td>
+              <td>
+                {% for q in worker.queues %}
+                  <span class="badge badge-outline badge-sm mr-1">{{ q }}</span>
+                {% empty %}
+                  <span class="opacity-50">—</span>
+                {% endfor %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="opacity-50">{% translate "No workers responded to ping." %}</p>
+    {% endif %}
+  </div>
+
+  {# Active tasks #}
+  <div class="mb-4">
+    <h2 class="pg-subtitle">{% translate "Active Tasks" %}</h2>
+    {% if celery.any_active_tasks %}
+      {% for worker in celery.workers_detail %}{% if worker.active %}
+        <p class="text-sm font-semibold mb-1 font-mono">{{ worker.name }}</p>
+        <div class="overflow-x-auto mb-2">
+          <table class="table table-xs w-full">
+            <thead><tr><th>{% translate "Task" %}</th><th>{% translate "ID" %}</th></tr></thead>
+            <tbody>
+              {% for task in worker.active %}
+              <tr>
+                <td>{{ task.name }}</td>
+                <td class="font-mono text-xs opacity-70">{{ task.id }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}{% endfor %}
+    {% else %}
+      <p class="opacity-50">{% translate "No active tasks." %}</p>
+    {% endif %}
+  </div>
+
+  {# Reserved tasks #}
+  <div class="mb-4">
+    <h2 class="pg-subtitle">{% translate "Reserved Tasks" %}</h2>
+    {% if celery.any_reserved_tasks %}
+      {% for worker in celery.workers_detail %}{% if worker.reserved %}
+        <p class="text-sm font-semibold mb-1 font-mono">{{ worker.name }}</p>
+        <div class="overflow-x-auto mb-2">
+          <table class="table table-xs w-full">
+            <thead><tr><th>{% translate "Task" %}</th><th>{% translate "ID" %}</th></tr></thead>
+            <tbody>
+              {% for task in worker.reserved %}
+              <tr>
+                <td>{{ task.name }}</td>
+                <td class="font-mono text-xs opacity-70">{{ task.id }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}{% endfor %}
+    {% else %}
+      <p class="opacity-50">{% translate "No reserved tasks." %}</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

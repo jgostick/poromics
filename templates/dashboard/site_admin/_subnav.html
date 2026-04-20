@@ -1,0 +1,19 @@
+{% load i18n %}
+<div class="tabs tabs-border mb-4">
+  <a href="{% url 'dashboard:admin_jobs' %}"
+     class="tab {% if active_tab == 'admin-jobs' %}tab-active{% endif %}">
+    <i class="fa fa-tasks mr-1"></i>{% translate "Jobs" %}
+  </a>
+  <a href="{% url 'dashboard:admin_users' %}"
+     class="tab {% if active_tab == 'admin-users' %}tab-active{% endif %}">
+    <i class="fa fa-users mr-1"></i>{% translate "Users & Teams" %}
+  </a>
+  <a href="{% url 'dashboard:admin_credits' %}"
+     class="tab {% if active_tab == 'admin-credits' %}tab-active{% endif %}">
+    <i class="fa fa-credit-card mr-1"></i>{% translate "Credits" %}
+  </a>
+  <a href="{% url 'dashboard:admin_celery' %}"
+     class="tab {% if active_tab == 'admin-celery' %}tab-active{% endif %}">
+    <i class="fa fa-cogs mr-1"></i>{% translate "Celery" %}
+  </a>
+</div>

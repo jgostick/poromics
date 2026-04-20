@@ -52,6 +52,30 @@
     </a>
   </li>
   <li>
+    <a href="{% url 'dashboard:admin_jobs' %}" {% if active_tab == 'admin-jobs' %}class="menu-active"{% endif %}>
+      <i class="fa fa-tasks h-4 w-4"></i>
+      {% translate "Jobs" %}
+    </a>
+  </li>
+  <li>
+    <a href="{% url 'dashboard:admin_users' %}" {% if active_tab == 'admin-users' %}class="menu-active"{% endif %}>
+      <i class="fa fa-users h-4 w-4"></i>
+      {% translate "Users & Teams" %}
+    </a>
+  </li>
+  <li>
+    <a href="{% url 'dashboard:admin_credits' %}" {% if active_tab == 'admin-credits' %}class="menu-active"{% endif %}>
+      <i class="fa fa-credit-card h-4 w-4"></i>
+      {% translate "Credits" %}
+    </a>
+  </li>
+  <li>
+    <a href="{% url 'dashboard:admin_celery' %}" {% if active_tab == 'admin-celery' %}class="menu-active"{% endif %}>
+      <i class="fa fa-cogs h-4 w-4"></i>
+      {% translate "Celery" %}
+    </a>
+  </li>
+  <li>
     <a href="{% url 'support:hijack_user' %}" {% if active_tab == 'support' %}class="menu-active"{% endif %}>
       <i class="fa fa-user-secret h-4 w-4"></i>
       {% translate "Impersonate a User" %}
