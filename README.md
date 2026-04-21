@@ -125,23 +125,29 @@ Note: Using the `solo` pool is recommended for development but not for productio
 
 For diffusivity jobs, Celery can route to a Julia server running on another machine.
 
-### 1) Configure queue and endpoint on the Mac (Django + Celery host)
+### 1) Keep the queue name stable and choose local vs remote by endpoint
 
 Set these in `.env`:
 
 ```bash
-# Optional default endpoint used when a queue has no explicit mapping
+# Keep the normal queue name for the GPU backend.
+JULIA_QUEUE_GPU=julia-gpu
+
+# Local execution: point the queue at localhost.
 JULIA_DEFAULT_SERVER_URL=http://127.0.0.1:2999
 
-# Route diffusivity "gpu" backend submissions to a custom queue name
-JULIA_QUEUE_GPU=julia-gpu-remote1
+# Remote execution: keep the same queue name, but point it at the remote host instead.
+# JULIA_DEFAULT_SERVER_URL=http://129.97.161.145:2999
 
-# Map queue names to Julia HTTP endpoints
+# Optional explicit queue-to-endpoint mapping.
 # Format: QUEUE=URL,QUEUE=URL
-JULIA_QUEUE_ENDPOINTS=julia-gpu-remote1=http://192.168.1.50:2999
+JULIA_QUEUE_ENDPOINTS=julia-gpu=http://127.0.0.1:2999
+
+# Example remote mapping with the same queue name:
+# JULIA_QUEUE_ENDPOINTS=julia-gpu=http://129.97.161.145:2999
 ```
 
-If you keep `JULIA_QUEUE_GPU=julia-gpu`, existing behavior remains local unless you map `julia-gpu` to a remote URL.
+The important point is that `julia-gpu` stays the queue name. Local vs remote is determined by whether that queue resolves to `127.0.0.1` or a remote IP.
 
 ### 2) Run the Julia server on the remote machine
 
@@ -156,12 +162,18 @@ julia julia_server.jl
 Then verify from the Mac:
 
 ```bash
-curl http://192.168.1.50:2999/health
+curl http://129.97.161.145:2999/health
 ```
 
 ### 3) Start/restart services on the Mac
 
 After updating `.env`, restart Django and Celery so new queue/endpoint settings are loaded.
+
+Example worker command on the Mac:
+
+```bash
+uv run celery -A poromics worker -Q julia-gpu -n julia-gpu@%h --pool=solo -l INFO
+```
 
 ### Notes
 
@@ -173,48 +185,62 @@ After updating `.env`, restart Django and Celery so new queue/endpoint settings 
 
 Permeability jobs can run remotely through a Taichi HTTP worker service.
 
-### 1) Configure queue and endpoint on the Mac (Django + Celery host)
+### 1) Keep the queue name stable and choose local vs remote by endpoint
 
 Set these in `.env`:
 
 ```bash
-# Empty means permeability uses local in-process kabs execution.
+# Keep the normal queue name for the GPU backend.
+TAICHI_QUEUE_GPU=kabs-gpu
+
+# Local execution: leave the default endpoint empty to keep the current in-process kabs path.
 TAICHI_DEFAULT_SERVER_URL=
 
-# Route permeability "gpu" backend submissions to a custom queue name.
-TAICHI_QUEUE_GPU=kabs-gpu-remote1
+# Remote execution: keep the same queue name, but point it at the remote Taichi server instead.
+# TAICHI_DEFAULT_SERVER_URL=http://129.97.161.145:3000
 
-# Map queue names to Taichi HTTP endpoints.
+# Optional explicit queue-to-endpoint mapping.
 # Format: QUEUE=URL,QUEUE=URL
-TAICHI_QUEUE_ENDPOINTS=kabs-gpu-remote1=http://192.168.1.51:3000
+TAICHI_QUEUE_ENDPOINTS=
+
+# Example remote mapping with the same queue name:
+# TAICHI_QUEUE_ENDPOINTS=kabs-gpu=http://129.97.161.145:3000
 ```
 
-If you keep `TAICHI_QUEUE_GPU=kabs-gpu`, existing local behavior remains unchanged unless you map `kabs-gpu` to a remote URL.
+The important point is that `kabs-gpu` stays the queue name. Local vs remote is determined by whether that queue resolves to a remote HTTP endpoint.
 
 ### 2) Run the Taichi server on the remote machine
 
-Copy `taichi_server.py` to the remote machine and run:
+Copy only `taichi_server.py` to the remote machine and run:
 
 ```bash
 export TAICHI_SERVER_HOST=0.0.0.0
 export TAICHI_SERVER_PORT=3000
+export TAICHI_BACKEND=gpu
 uv run python taichi_server.py
 ```
 
 Then verify from the Mac:
 
 ```bash
-curl http://192.168.1.51:3000/health
+curl http://129.97.161.145:3000/health
 ```
 
 ### 3) Start/restart services on the Mac
 
 After updating `.env`, restart Django and Celery so the queue mapping is reloaded.
 
+Example worker command on the Mac:
+
+```bash
+uv run celery -A poromics worker -Q kabs-gpu -n kabs-gpu@%h --pool=solo -l INFO
+```
+
 ### Notes
 
 - Queue-to-endpoint routing for Taichi is settings-driven, same as Julia.
-- If a queue has no configured endpoint, permeability runs locally in the Celery worker.
+- If `kabs-gpu` has no configured endpoint, permeability runs locally in the Celery worker.
+- The remote Taichi worker is self-contained: it only needs `taichi_server.py` plus its Python package dependencies.
 - This PoC is intended for trusted LAN use and does not add auth or TLS.
 
 ## Updating translations

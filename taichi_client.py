@@ -20,7 +20,7 @@ def _server_healthy(endpoint_url: str | None) -> bool:
     if not endpoint:
         return False
     try:
-        response = httpx.get(f"{endpoint}/health", timeout=2.0)
+        response = httpx.get(f"{endpoint}/health", timeout=5.0)
         return response.status_code == 200
     except Exception:
         return False
@@ -66,7 +66,12 @@ def submit_job(
 
 def poll_job(*, job_id: str, endpoint_url: str) -> dict | None:
     endpoint = _normalize_endpoint(endpoint_url)
-    response = httpx.get(f"{endpoint}/job/{job_id}", timeout=10.0)
+    try:
+        response = httpx.get(f"{endpoint}/job/{job_id}", timeout=30.0)
+    except httpx.TimeoutException:
+        # Treat poll timeouts as transient and continue polling.
+        log.warning("Timed out polling Taichi job %s at %s; continuing to wait", job_id, endpoint)
+        return None
     response.raise_for_status()
     data = response.json()
 

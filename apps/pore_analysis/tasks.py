@@ -62,9 +62,10 @@ def run_permeability_job(self, job_id):
             from taichi_client import _server_healthy as _taichi_server_healthy
 
             if not _taichi_server_healthy(endpoint_url):
-                raise RuntimeError(
-                    f"Taichi permeability service is unreachable for queue '{queue_name}' "
-                    f"at {endpoint_url}."
+                log.warning(
+                    "Taichi health check failed for queue '%s' at %s; proceeding with submit/poll path",
+                    queue_name,
+                    endpoint_url,
                 )
 
         with job.image.file.open("rb") as f:

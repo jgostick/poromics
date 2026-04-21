@@ -31,6 +31,9 @@ JOB_STORE: dict[str, JobRecord] = {}
 JOB_LOCK = threading.Lock()
 MAX_WORKERS = int(os.environ.get("TAICHI_SERVER_WORKERS", "2"))
 EXECUTOR = ThreadPoolExecutor(max_workers=MAX_WORKERS)
+_TAICHI_INIT_LOCK = threading.Lock()
+_TAICHI_INITIALIZED = False
+_TAICHI_BACKEND = ""
 
 
 def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict) -> None:
@@ -58,8 +61,35 @@ def _decode_array(encoded_npy: str) -> np.ndarray:
     return np.load(io.BytesIO(raw), allow_pickle=False)
 
 
+def _ensure_taichi_initialized(backend: str) -> None:
+    global _TAICHI_INITIALIZED, _TAICHI_BACKEND
+
+    if _TAICHI_INITIALIZED:
+        return
+
+    with _TAICHI_INIT_LOCK:
+        if _TAICHI_INITIALIZED:
+            return
+
+        import taichi as ti
+
+        configured_backend = (os.environ.get("TAICHI_BACKEND") or backend or "cpu").lower()
+        arch_map = {
+            "cpu": ti.cpu,
+            "gpu": ti.gpu,
+            "metal": ti.metal,
+            "cuda": ti.cuda,
+            "opengl": ti.opengl,
+        }
+        arch = arch_map.get(configured_backend, ti.cpu)
+        ti.init(arch=arch)
+        _TAICHI_BACKEND = configured_backend
+        _TAICHI_INITIALIZED = True
+        log.info("Taichi initialized for server backend=%s", configured_backend)
+
+
 def _compute_permeability(payload: dict) -> dict:
-    from apps.pore_analysis.analysis.permeability import run_kabs_permeability
+    from kabs import compute_permeability, solve_flow
 
     image = _decode_array(str(payload["image_npy_b64"]))
     direction = str(payload["direction"])
@@ -68,15 +98,29 @@ def _compute_permeability(payload: dict) -> dict:
     backend = str(payload["backend"])
     voxel_size = float(payload["voxel_size"])
 
-    return run_kabs_permeability(
-        image_array=image,
+    _ensure_taichi_initialized(backend)
+
+    solution_state = solve_flow(
+        im=image,
         direction=direction,
-        max_iterations=max_iterations,
-        tolerance=tolerance,
-        backend=backend,
-        voxel_size=voxel_size,
-        endpoint_url=None,
+        n_steps=max_iterations,
+        tol=tolerance,
+        verbose=False,
     )
+    permeability = compute_permeability(
+        soln=solution_state,
+        direction=direction,
+        dx_m=voxel_size,
+    )
+
+    return {
+        "permeability [lu^2]": permeability["k_lu"],
+        "direction": direction,
+        "max_iterations": max_iterations,
+        "tolerance": tolerance,
+        "backend": backend,
+        "voxel_size": voxel_size,
+    }
 
 
 def _run_job(job_id: str, payload: dict) -> None:
