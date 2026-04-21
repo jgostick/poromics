@@ -1,5 +1,6 @@
 from io import BytesIO
 
+import imageio.v3 as iio
 import numpy as np
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
@@ -36,6 +37,11 @@ class UploadImageViewTests(TestCase):
         np.save(buffer, array, allow_pickle=False)
         return SimpleUploadedFile(filename, buffer.getvalue(), content_type="application/octet-stream")
 
+    def _make_tiff_file(self, array, filename="sample.tiff"):
+        buffer = BytesIO()
+        iio.imwrite(buffer, array, extension=".tiff", plugin="tifffile")
+        return SimpleUploadedFile(filename, buffer.getvalue(), content_type="image/tiff")
+
     def test_upload_npy_success(self):
         array = np.ones((5, 6, 7), dtype=bool)
         upload_file = self._make_npy_file(array)
@@ -69,6 +75,26 @@ class UploadImageViewTests(TestCase):
         self.assertEqual(UploadedImage.objects.count(), 1)
         image = UploadedImage.objects.first()
         self.assertEqual(image.dimensions, [depth, height, width])
+
+    def test_upload_tiff_success(self):
+        array = (np.arange(5 * 6 * 7, dtype=np.uint16) % 11).reshape((5, 6, 7))
+        upload_file = self._make_tiff_file(array)
+
+        response = self._post_upload(upload_file)
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(UploadedImage.objects.count(), 1)
+
+        image = UploadedImage.objects.first()
+        self.assertEqual(image.dimensions, [5, 6, 7])
+        self.assertTrue(image.file.name.endswith(".npy"))
+
+        with image.file.open("rb") as handle:
+            stored = np.load(handle, allow_pickle=False)
+
+        np.testing.assert_array_equal(stored, array)
 
     def test_upload_raw_missing_metadata_fails(self):
         raw = b"\x00\x01\x02\x03"
@@ -109,6 +135,17 @@ class UploadImageViewTests(TestCase):
         body = response.json()
         self.assertFalse(body["success"])
         self.assertIn("coming soon", body["message"].lower())
+        self.assertEqual(UploadedImage.objects.count(), 0)
+
+    def test_upload_invalid_tiff_fails(self):
+        upload_file = SimpleUploadedFile("broken.tiff", b"not-a-real-tiff", content_type="image/tiff")
+
+        response = self._post_upload(upload_file)
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertFalse(body["success"])
+        self.assertIn("Invalid TIFF file", body["message"])
         self.assertEqual(UploadedImage.objects.count(), 0)
 
     def test_upload_unsupported_extension_fails(self):

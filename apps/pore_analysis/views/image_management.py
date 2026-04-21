@@ -1,6 +1,7 @@
 import os
 from io import BytesIO
 
+import imageio.v3 as iio
 import numpy as np
 from django.contrib import messages
 from django.core.files.base import ContentFile
@@ -15,8 +16,8 @@ from .utils import get_pore_analysis_context
 
 
 MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
-UPLOAD_ALLOWED_EXTENSIONS = {'.npy', '.raw', '.stl'}
-UPLOAD_SUPPORTED_EXTENSIONS = {'.npy', '.raw'}
+UPLOAD_ALLOWED_EXTENSIONS = {'.npy', '.raw', '.stl', '.tif', '.tiff'}
+UPLOAD_SUPPORTED_EXTENSIONS = {'.npy', '.raw', '.tif', '.tiff'}
 RAW_DTYPE_OPTIONS = ('uint8', 'uint16', 'uint32', 'float32', 'float64')
 
 
@@ -54,6 +55,21 @@ def _parse_raw_array(file_bytes, width, height, depth, raw_dtype):
         )
 
     return np.frombuffer(file_bytes, dtype=dtype).reshape((depth, height, width))
+
+
+def _build_npy_content_file(array, original_name):
+    npy_buffer = BytesIO()
+    np.save(npy_buffer, array, allow_pickle=False)
+    npy_content = npy_buffer.getvalue()
+    npy_name = f"{os.path.splitext(original_name)[0]}.npy"
+    return ContentFile(npy_content, name=npy_name), len(npy_content)
+
+
+def _parse_tiff_array(file_bytes):
+    try:
+        return np.asarray(iio.imread(BytesIO(file_bytes), plugin='tifffile'))
+    except Exception as exc:
+        raise ValueError(_('Invalid TIFF file')) from exc
 
 
 @login_and_team_required 
@@ -288,12 +304,14 @@ def upload_image(request, team_slug):
                         array = _parse_raw_array(file_bytes, raw_width, raw_height, raw_depth, raw_dtype)
 
                         # Store RAW input as .npy so downstream code can keep using np.load.
-                        npy_buffer = BytesIO()
-                        np.save(npy_buffer, array, allow_pickle=False)
-                        npy_content = npy_buffer.getvalue()
-                        npy_name = f"{os.path.splitext(uploaded_file.name)[0]}.npy"
-                        stored_file = ContentFile(npy_content, name=npy_name)
-                        stored_file_size = len(npy_content)
+                        stored_file, stored_file_size = _build_npy_content_file(array, uploaded_file.name)
+                    except ValueError as exc:
+                        return JsonResponse({'success': False, 'message': str(exc)})
+
+                elif extension in {'.tif', '.tiff'}:
+                    try:
+                        array = _parse_tiff_array(file_bytes)
+                        stored_file, stored_file_size = _build_npy_content_file(array, uploaded_file.name)
                     except ValueError as exc:
                         return JsonResponse({'success': False, 'message': str(exc)})
 

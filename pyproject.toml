@@ -70,6 +70,7 @@ dependencies = [
     "sentry-sdk[django]>=2.55.0",
     "whitenoise[brotli]",
     "openpnm>=3.5.2",
+    "imageio>=2.37.3",
 ]
 
 [dependency-groups]

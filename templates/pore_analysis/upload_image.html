@@ -9,7 +9,7 @@
   <!-- Header -->
   <div class="mb-8">
     <h1 class="text-3xl font-bold text-base-content">{% translate "Upload Volumetric Image" %}</h1>
-    <p class="text-base-content/70 mt-2">{% translate "Upload an approved file type (.npy, .raw, .stl)" %}</p>
+    <p class="text-base-content/70 mt-2">{% translate "Upload an approved file type (.npy, .raw, .tif, .tiff, .stl)" %}</p>
   </div>
 
   <!-- Upload Form -->
@@ -61,12 +61,12 @@
             </div>
 
             <div x-show="selectedExtension === '.stl'" class="alert alert-warning mt-4 text-left">
-              <span>{% translate "STL upload is coming soon. Please use .npy or .raw for now." %}</span>
+              <span>{% translate "STL upload is coming soon. Please use .npy, .raw, or TIFF files for now." %}</span>
             </div>
 
             <!-- Hidden File Input -->
             <input type="file" x-ref="fileInput" @change="handleFileSelect($event)" 
-                   accept=".npy,.raw,.stl" class="hidden" name="file" required>
+                   accept=".npy,.raw,.tif,.tiff,.stl" class="hidden" name="file" required>
           </div>
         </div>
 
@@ -176,9 +176,10 @@
     <div>
       <h3 class="font-semibold">{% translate "File Requirements:" %}</h3>
       <ul class="text-sm space-y-1 mt-2">
-        <li>• {% translate "Approved formats: .npy, .raw, .stl" %}</li>
-        <li>• {% translate "Current support: .npy and .raw (.stl coming soon)" %}</li>
+        <li>• {% translate "Approved formats: .npy, .raw, .tif, .tiff, .stl" %}</li>
+        <li>• {% translate "Current support: .npy, .raw, .tif, and .tiff (.stl coming soon)" %}</li>
         <li>• {% translate "RAW uploads require width, height, depth, and dtype" %}</li>
+        <li>• {% translate "Single TIFF uploads do not require extra metadata" %}</li>
         <li>• {% translate ".npy uploads must contain boolean arrays (True = pore, False = solid)" %}</li>
         <li>• {% translate "Maximum file size: 1GB" %}</li>
         <li>• {% translate "3D arrays preferred, but 2D is supported" %}</li>
@@ -213,9 +214,9 @@ function uploadHandler() {
 
     setFile(file) {
       const extension = this.getFileExtension(file.name);
-      const allowedExtensions = ['.npy', '.raw', '.stl'];
+      const allowedExtensions = ['.npy', '.raw', '.tif', '.tiff', '.stl'];
       if (!allowedExtensions.includes(extension)) {
-        alert('Please select an approved file type (.npy, .raw, .stl)');
+        alert('Please select an approved file type (.npy, .raw, .tif, .tiff, .stl)');
         return;
       }
 
@@ -299,7 +300,7 @@ function uploadHandler() {
       }
 
       if (this.selectedExtension === '.stl') {
-        alert('STL upload is coming soon. Please use .npy or .raw for now.');
+        alert('STL upload is coming soon. Please use .npy, .raw, or TIFF files for now.');
         return;
       }
 
