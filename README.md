@@ -46,6 +46,15 @@ If you're just getting started, [try these steps next](https://docs.saaspegasus.
 You can run `make` to see other helper functions, and you can view the source
 of the file in case you need to run any specific commands.
 
+## Architecture Documentation
+
+In addition to this setup-focused README, implementation documentation is available in:
+
+- `docs/architecture/system-overview.md`
+- `docs/architecture/team-tenancy.md`
+- `docs/architecture/compute-routing.md`
+- `docs/architecture/operational-learnings.md`
+
 ## Installation - Native
 
 You can also install/run the app directly on your OS using the instructions below.
