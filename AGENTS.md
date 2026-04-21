@@ -5,7 +5,7 @@ This file is the fast-start index for coding sessions in this repository.
 ## Quick Session Checklist
 
 1. Read this file first.
-2. Read `.claude/guides/README.md`.
+2. Read `docs/guides/README.md`.
 3. Open the architecture docs in `docs/architecture/` when touching system behavior.
 4. Use Makefile commands by default.
 5. Keep changes small, consistent, and aligned with existing patterns.
@@ -14,9 +14,9 @@ This file is the fast-start index for coding sessions in this repository.
 
 ### Focused agent guidance
 
-- `.claude/guides/backend-django.md`
-- `.claude/guides/frontend-ui.md`
-- `.claude/guides/operations-jobs.md`
+- `docs/guides/backend-django.md`
+- `docs/guides/frontend-ui.md`
+- `docs/guides/operations-jobs.md`
 
 ### Architecture and implementation documentation
 
@@ -27,6 +27,7 @@ This file is the fast-start index for coding sessions in this repository.
 
 ## Non-Negotiable Conventions
 
+- Do not create agent-specific directories (e.g. `.claude/`, `.cursor/`, `.codex/`). All agent guidance lives in `docs/guides/` and `AGENTS.md`. Memory and note files belong in `docs/` or the project root.
 - Prefer simple solutions and avoid duplicate logic.
 - Do not introduce new patterns/tech unless existing approach is exhausted.
 - Do not overwrite `.env` without explicit confirmation.
@@ -58,4 +59,4 @@ When behavior changes:
 
 1. Update user-facing setup in `README.md` if usage changed.
 2. Update architecture docs in `docs/architecture/` if implementation changed.
-3. Update `.claude/guides/` if coding-agent workflow or conventions changed.
+3. Update `docs/guides/` if coding-agent workflow or conventions changed.
