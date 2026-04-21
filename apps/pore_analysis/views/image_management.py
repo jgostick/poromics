@@ -1,8 +1,9 @@
 import os
-import tempfile
+from io import BytesIO
 
 import numpy as np
 from django.contrib import messages
+from django.core.files.base import ContentFile
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.translation import gettext as _
@@ -11,6 +12,48 @@ from apps.pore_analysis.models import AnalysisType, UploadedImage
 from apps.teams.decorators import login_and_team_required
 
 from .utils import get_pore_analysis_context
+
+
+MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
+UPLOAD_ALLOWED_EXTENSIONS = {'.npy', '.raw', '.stl'}
+UPLOAD_SUPPORTED_EXTENSIONS = {'.npy', '.raw'}
+RAW_DTYPE_OPTIONS = ('uint8', 'uint16', 'uint32', 'float32', 'float64')
+
+
+def _get_file_extension(filename):
+    return os.path.splitext(filename or '')[1].lower()
+
+
+def _parse_positive_int(value, label):
+    if value is None:
+        raise ValueError(_('{label} is required').format(label=label))
+
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        raise ValueError(_('{label} must be a positive integer').format(label=label))
+
+    if parsed <= 0:
+        raise ValueError(_('{label} must be a positive integer').format(label=label))
+
+    return parsed
+
+
+def _parse_raw_array(file_bytes, width, height, depth, raw_dtype):
+    if raw_dtype not in RAW_DTYPE_OPTIONS:
+        raise ValueError(_('Invalid RAW dtype selection'))
+
+    dtype = np.dtype(raw_dtype)
+    expected_size = width * height * depth * dtype.itemsize
+    actual_size = len(file_bytes)
+    if actual_size != expected_size:
+        raise ValueError(
+            _(
+                'RAW size does not match dimensions/dtype. Expected {expected} bytes, got {actual} bytes.'
+            ).format(expected=expected_size, actual=actual_size)
+        )
+
+    return np.frombuffer(file_bytes, dtype=dtype).reshape((depth, height, width))
 
 
 @login_and_team_required 
@@ -194,6 +237,8 @@ def upload_image(request, team_slug):
             name = request.POST.get('name', '').strip()
             description = request.POST.get('description', '').strip()
             voxel_size = request.POST.get('voxel_size', '').strip()
+            stored_file = uploaded_file
+            stored_file_size = uploaded_file.size
 
             # Validate required fields
             if not uploaded_file:
@@ -202,47 +247,67 @@ def upload_image(request, team_slug):
             if not name:
                 return JsonResponse({'success': False, 'message': _('Image name is required')})
 
-            # Validate file type
-            if not uploaded_file.name.lower().endswith('.npy'):
-                return JsonResponse({'success': False, 'message': _('Only .npy files are supported')})
+            extension = _get_file_extension(uploaded_file.name)
+            if extension not in UPLOAD_ALLOWED_EXTENSIONS:
+                return JsonResponse({'success': False, 'message': _('Unsupported file extension')})
+
+            if extension == '.stl':
+                return JsonResponse({'success': False, 'message': _('STL upload is coming soon')})
+
+            if extension not in UPLOAD_SUPPORTED_EXTENSIONS:
+                return JsonResponse({'success': False, 'message': _('This file type is not supported yet')})
 
             # Validate file size (1GB limit)
-            if uploaded_file.size > 1024 * 1024 * 1024:
+            if uploaded_file.size > MAX_UPLOAD_BYTES:
                 return JsonResponse({'success': False, 'message': _('File size must be less than 1GB')})
 
-            # Process the numpy file to extract metadata
+            # Read file bytes once for type-specific validation.
             try:
-                # Save uploaded file to temporary location
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.npy') as temp_file:
-                    for chunk in uploaded_file.chunks():
-                        temp_file.write(chunk)
-                    temp_file_path = temp_file.name
+                file_bytes = uploaded_file.read()
+                uploaded_file.seek(0)
+                if extension == '.npy':
+                    try:
+                        array = np.load(BytesIO(file_bytes), allow_pickle=False)
+                    except Exception:
+                        return JsonResponse({'success': False, 'message': _('Invalid .npy file format')})
 
-                # Load and validate numpy array
-                try:
-                    array = np.load(temp_file_path, allow_pickle=False).astype(bool)
-                except Exception:
-                    os.unlink(temp_file_path)  # Clean up temp file
-                    return JsonResponse({'success': False, 'message': _('Invalid .npy file format')})
-                
-                # Validate array properties
-                if array.dtype != bool:
-                    os.unlink(temp_file_path)
-                    return JsonResponse({'success': False, 'message': _('Array must be boolean type (True=pore, False=solid)')})
-                
-                # Get array dimensions
+                    if array.dtype != bool:
+                        return JsonResponse(
+                            {
+                                'success': False,
+                                'message': _('Array must be boolean type (True=pore, False=solid)'),
+                            }
+                        )
+
+                elif extension == '.raw':
+                    raw_dtype = request.POST.get('raw_dtype')
+                    try:
+                        raw_width = _parse_positive_int(request.POST.get('raw_width'), _('Width'))
+                        raw_height = _parse_positive_int(request.POST.get('raw_height'), _('Height'))
+                        raw_depth = _parse_positive_int(request.POST.get('raw_depth'), _('Depth'))
+                        array = _parse_raw_array(file_bytes, raw_width, raw_height, raw_depth, raw_dtype)
+
+                        # Store RAW input as .npy so downstream code can keep using np.load.
+                        npy_buffer = BytesIO()
+                        np.save(npy_buffer, array, allow_pickle=False)
+                        npy_content = npy_buffer.getvalue()
+                        npy_name = f"{os.path.splitext(uploaded_file.name)[0]}.npy"
+                        stored_file = ContentFile(npy_content, name=npy_name)
+                        stored_file_size = len(npy_content)
+                    except ValueError as exc:
+                        return JsonResponse({'success': False, 'message': str(exc)})
+
+                else:
+                    return JsonResponse({'success': False, 'message': _('Unsupported file type')})
+
                 dimensions = list(array.shape)
-                
+
                 # Validate dimensions (2D or 3D only)
                 if len(dimensions) < 2 or len(dimensions) > 3:
-                    os.unlink(temp_file_path)
                     return JsonResponse({'success': False, 'message': _('Array must be 2D or 3D')})
 
-                # Clean up temp file
-                os.unlink(temp_file_path)
-
             except Exception as e:
-                return JsonResponse({'success': False, 'message': _('Error processing numpy file: {}').format(str(e))})
+                return JsonResponse({'success': False, 'message': _('Error processing uploaded file: {}').format(str(e))})
 
             # Parse voxel size
             voxel_size_value = None
@@ -260,8 +325,8 @@ def upload_image(request, team_slug):
                 uploaded_by=request.user,
                 name=name,
                 description=description,
-                file=uploaded_file,
-                file_size=uploaded_file.size,
+                file=stored_file,
+                file_size=stored_file_size,
                 dimensions=dimensions,
                 voxel_size=voxel_size_value,
             )

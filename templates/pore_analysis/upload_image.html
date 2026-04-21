@@ -9,7 +9,7 @@
   <!-- Header -->
   <div class="mb-8">
     <h1 class="text-3xl font-bold text-base-content">{% translate "Upload Volumetric Image" %}</h1>
-    <p class="text-base-content/70 mt-2">{% translate "Upload a .npy file containing your boolean pore structure" %}</p>
+    <p class="text-base-content/70 mt-2">{% translate "Upload an approved file type (.npy, .raw, .stl)" %}</p>
   </div>
 
   <!-- Upload Form -->
@@ -36,7 +36,7 @@
 
             <!-- Upload Text -->
             <div x-show="!selectedFile">
-              <p class="text-lg font-medium text-base-content mb-2">{% translate "Drop your .npy file here" %}</p>
+              <p class="text-lg font-medium text-base-content mb-2">{% translate "Drop your file here" %}</p>
               <p class="text-base-content/70 mb-4">{% translate "or click to browse" %}</p>
               <button type="button" class="btn btn-primary" @click="$refs.fileInput.click()">
                 {% translate "Select File" %}
@@ -49,6 +49,7 @@
               <div class="flex items-center justify-between">
                 <div>
                   <p class="font-medium" x-text="selectedFile?.name"></p>
+                  <p class="text-xs text-base-content/70" x-show="selectedExtension" x-text="'Type: ' + selectedExtension"></p>
                   <p class="text-sm text-base-content/70" x-text="formatFileSize(selectedFile?.size)"></p>
                 </div>
                 <button type="button" @click="clearFile()" class="btn btn-sm btn-ghost btn-circle text-error hover:bg-error/20">
@@ -59,9 +60,13 @@
               </div>
             </div>
 
+            <div x-show="selectedExtension === '.stl'" class="alert alert-warning mt-4 text-left">
+              <span>{% translate "STL upload is coming soon. Please use .npy or .raw for now." %}</span>
+            </div>
+
             <!-- Hidden File Input -->
             <input type="file" x-ref="fileInput" @change="handleFileSelect($event)" 
-                   accept=".npy" class="hidden" name="file" required>
+                   accept=".npy,.raw,.stl" class="hidden" name="file" required>
           </div>
         </div>
 
@@ -75,23 +80,67 @@
                    class="input input-bordered w-full"
                    placeholder="{% translate 'Enter a descriptive name for your image' %}">
           </div>
-          
-          <div class="form-control">
-            <label class="label" for="description">
-              <span class="label-text">{% translate "Description" %} <span class="text-base-content/70">({% translate "Optional" %})</span></span>
-            </label>
-            <textarea id="description" name="description" rows="3"
-                      class="textarea textarea-bordered"
-                      placeholder="{% translate 'Describe your sample, imaging conditions, etc.' %}"></textarea>
+          <div class="grid grid-cols-10 gap-2">
+            <div class="col-span-7 form-control">
+              <label for="description" class="mb-2 block">
+                <span class="label-text">{% translate "Description" %} <span class="text-base-content/70">({% translate "Optional" %})</span></span>
+              </label>
+              <textarea id="description" name="description" rows="3"
+                        class="textarea textarea-bordered w-full"
+                        placeholder="{% translate 'Describe your sample, imaging conditions, etc.' %}"></textarea>
+            </div>
+
+            <div class="col-span-3 form-control">
+              <label for="voxel_size" class="mb-2 block">
+                <span class="label-text">{% translate "Voxel Size" %} (µm) <span class="text-base-content/70">({% translate "Optional" %})</span></span>
+              </label>
+              <input type="number" id="voxel_size" name="voxel_size" step="0.001" min="0"
+                    class="input input-bordered w-full"
+                    placeholder="{% translate 'e.g., 0.65' %}">
+            </div>
           </div>
 
-          <div class="form-control">
-            <label class="label" for="voxel_size">
-              <span class="label-text">{% translate "Voxel Size" %} (µm) <span class="text-base-content/70">({% translate "Optional" %})</span></span>
-            </label>
-            <input type="number" id="voxel_size" name="voxel_size" step="0.001" min="0"
-                   class="input input-bordered w-full"
-                   placeholder="{% translate 'e.g., 0.65' %}">
+          <div x-show="selectedExtension === '.raw'" class="grid grid-cols-12 gap-2">
+            <div class="col-span-3 form-control">
+              <label class="mb-2 block" for="raw_width">
+                <span class="label-text">{% translate "Width (px)" %}</span>
+              </label>
+              <input type="number" id="raw_width" name="raw_width" min="1" step="1"
+                     class="input input-bordered w-full"
+                     :required="selectedExtension === '.raw'"
+                     placeholder="{% translate 'Width' %}">
+            </div>
+            <div class="col-span-3 form-control">
+              <label class="mb-2 block" for="raw_height">
+                <span class="label-text">{% translate "Height (px)" %}</span>
+              </label>
+              <input type="number" id="raw_height" name="raw_height" min="1" step="1"
+                     class="input input-bordered w-full"
+                     :required="selectedExtension === '.raw'"
+                     placeholder="{% translate 'Height' %}">
+            </div>
+            <div class="col-span-3 form-control">
+              <label class="mb-2 block" for="raw_depth">
+                <span class="label-text">{% translate "Depth (slices)" %}</span>
+              </label>
+              <input type="number" id="raw_depth" name="raw_depth" min="1" step="1"
+                     class="input input-bordered w-full"
+                     :required="selectedExtension === '.raw'"
+                     placeholder="{% translate 'Depth' %}">
+            </div>
+            <div class="col-span-3 form-control">
+              <label class="mb-2 block" for="raw_dtype">
+                <span class="label-text">{% translate "Bit depth / dtype" %}</span>
+              </label>
+              <select id="raw_dtype" name="raw_dtype" class="select select-bordered w-full"
+                      :required="selectedExtension === '.raw'" @change="prefillRawDimensions()">
+                <option value="uint8">uint8</option>
+                <option value="uint16">uint16</option>
+                <option value="uint32">uint32</option>
+                <option value="float32">float32</option>
+                <option value="float64">float64</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -109,9 +158,9 @@
           <a href="/a/{{ team_slug }}/pore-analysis/" class="btn">
             {% translate "Cancel" %}
           </a>
-          <button type="submit" :disabled="uploading || !selectedFile" 
+          <button type="submit" :disabled="uploading || !selectedFile || selectedExtension === '.stl'" 
                   class="btn btn-primary" :class="{'loading': uploading}">
-            <span x-show="!uploading">{% translate "Upload Image" %}</span>
+            <span x-show="!uploading">{% translate "Save File" %}</span>
             <span x-show="uploading">{% translate "Uploading..." %}</span>
           </button>
         </div>
@@ -127,8 +176,10 @@
     <div>
       <h3 class="font-semibold">{% translate "File Requirements:" %}</h3>
       <ul class="text-sm space-y-1 mt-2">
-        <li>• {% translate "File format: .npy (NumPy array)" %}</li>
-        <li>• {% translate "Data type: Boolean (True = pore, False = solid)" %}</li>
+        <li>• {% translate "Approved formats: .npy, .raw, .stl" %}</li>
+        <li>• {% translate "Current support: .npy and .raw (.stl coming soon)" %}</li>
+        <li>• {% translate "RAW uploads require width, height, depth, and dtype" %}</li>
+        <li>• {% translate ".npy uploads must contain boolean arrays (True = pore, False = solid)" %}</li>
         <li>• {% translate "Maximum file size: 1GB" %}</li>
         <li>• {% translate "3D arrays preferred, but 2D is supported" %}</li>
       </ul>
@@ -141,6 +192,7 @@ function uploadHandler() {
   return {
     dragOver: false,
     selectedFile: null,
+    selectedExtension: '',
     uploading: false,
     uploadProgress: 0,
 
@@ -160,9 +212,10 @@ function uploadHandler() {
     },
 
     setFile(file) {
-      // Validate file type
-      if (!file.name.toLowerCase().endsWith('.npy')) {
-        alert('Please select a .npy file');
+      const extension = this.getFileExtension(file.name);
+      const allowedExtensions = ['.npy', '.raw', '.stl'];
+      if (!allowedExtensions.includes(extension)) {
+        alert('Please select an approved file type (.npy, .raw, .stl)');
         return;
       }
 
@@ -173,17 +226,63 @@ function uploadHandler() {
       }
 
       this.selectedFile = file;
+      this.selectedExtension = extension;
+      if (this.selectedExtension === '.raw') {
+        this.prefillRawDimensions();
+      }
       
       // Set default name from filename
       const nameInput = document.getElementById('name');
       if (!nameInput.value) {
-        nameInput.value = file.name.replace('.npy', '');
+        nameInput.value = file.name.replace(/\.[^/.]+$/, '');
       }
     },
 
     clearFile() {
       this.selectedFile = null;
+      this.selectedExtension = '';
       this.$refs.fileInput.value = '';
+    },
+
+    getFileExtension(fileName) {
+      const lowerName = (fileName || '').toLowerCase();
+      const dotIndex = lowerName.lastIndexOf('.');
+      if (dotIndex === -1) {
+        return '';
+      }
+      return lowerName.slice(dotIndex);
+    },
+
+    prefillRawDimensions() {
+      if (!this.selectedFile || this.selectedExtension !== '.raw') {
+        return;
+      }
+
+      const dtype = document.getElementById('raw_dtype')?.value || 'uint8';
+      const itemSizeMap = {
+        uint8: 1,
+        uint16: 2,
+        uint32: 4,
+        float32: 4,
+        float64: 8,
+      };
+      const itemSize = itemSizeMap[dtype] || 1;
+      const voxelCount = Math.max(1, Math.floor(this.selectedFile.size / itemSize));
+      const guess = Math.max(1, Math.round(Math.cbrt(voxelCount)));
+
+      const widthInput = document.getElementById('raw_width');
+      const heightInput = document.getElementById('raw_height');
+      const depthInput = document.getElementById('raw_depth');
+
+      if (widthInput && !widthInput.value) {
+        widthInput.value = guess;
+      }
+      if (heightInput && !heightInput.value) {
+        heightInput.value = guess;
+      }
+      if (depthInput && !depthInput.value) {
+        depthInput.value = guess;
+      }
     },
 
     formatFileSize(bytes) {
@@ -199,6 +298,22 @@ function uploadHandler() {
         return;
       }
 
+      if (this.selectedExtension === '.stl') {
+        alert('STL upload is coming soon. Please use .npy or .raw for now.');
+        return;
+      }
+
+      if (this.selectedExtension === '.raw') {
+        const rawWidth = document.getElementById('raw_width').value;
+        const rawHeight = document.getElementById('raw_height').value;
+        const rawDepth = document.getElementById('raw_depth').value;
+        const rawDtype = document.getElementById('raw_dtype').value;
+        if (!rawWidth || !rawHeight || !rawDepth || !rawDtype) {
+          alert('Please enter width, height, depth, and dtype for RAW files.');
+          return;
+        }
+      }
+
       this.uploading = true;
       this.uploadProgress = 0;
 
@@ -208,6 +323,12 @@ function uploadHandler() {
         formData.append('name', document.getElementById('name').value);
         formData.append('description', document.getElementById('description').value);
         formData.append('voxel_size', document.getElementById('voxel_size').value || '');
+        if (this.selectedExtension === '.raw') {
+          formData.append('raw_width', document.getElementById('raw_width').value);
+          formData.append('raw_height', document.getElementById('raw_height').value);
+          formData.append('raw_depth', document.getElementById('raw_depth').value);
+          formData.append('raw_dtype', document.getElementById('raw_dtype').value);
+        }
         formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
 
         const response = await fetch(window.location.href, {
