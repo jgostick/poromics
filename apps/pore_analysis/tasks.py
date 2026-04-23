@@ -43,6 +43,10 @@ def _resolve_julia_endpoint(queue_name: str) -> str:
     return get_queue_endpoint(queue_name, default=default_endpoint)
 
 
+def _resolve_cpu_endpoint(queue_name: str) -> str:
+    return get_queue_endpoint(queue_name, default="").strip()
+
+
 def _resolve_endpoint_for_job(job: AnalysisJob, queue_name: str, *, compute: str) -> str:
     """Resolve endpoint with per-job routing metadata taking precedence over settings.
 
@@ -55,7 +59,9 @@ def _resolve_endpoint_for_job(job: AnalysisJob, queue_name: str, *, compute: str
 
     if compute == "julia":
         return _resolve_julia_endpoint(queue_name)
-    return _resolve_taichi_endpoint(queue_name)
+    if compute == "taichi":
+        return _resolve_taichi_endpoint(queue_name)
+    return _resolve_cpu_endpoint(queue_name)
 
 
 @shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 1})
@@ -214,6 +220,18 @@ def run_poresize_job(self, job_id):
     job.save(update_fields=["status", "started_at", "progress_percentage", "error_message", "updated_at"])
 
     try:
+        queue_name = _get_task_queue_name(self.request, default_queue="basic-cpu")
+        endpoint_url = _resolve_endpoint_for_job(job, queue_name, compute="cpu")
+
+        if endpoint_url:
+            from python_remote_client import _server_healthy as _python_server_healthy
+
+            if not _python_server_healthy(endpoint_url):
+                log.warning(
+                    "Python remote health check failed for queue '%s' at %s; proceeding with submit/poll path",
+                    queue_name,
+                    endpoint_url,
+                )
         with job.image.file.open("rb") as f:
             arr = np.load(f, allow_pickle=False)
 
@@ -224,19 +242,12 @@ def run_poresize_job(self, job_id):
 
         sizes = int((job.parameters or {}).get("sizes", 25))
         voxel_size = float(job.image.voxel_size or 1.0)
-        histogram = run_poresize(
+        solution = run_poresize(
             image_array=arr,
             sizes=sizes,
             voxel_size=voxel_size,
+            endpoint_url=endpoint_url or None,
         )
-
-        counts, bin_edges = histogram
-        result = {
-            "counts": counts.tolist(),
-            "bin_edges": bin_edges.tolist(),
-            "sizes": sizes,
-            "voxel_size": voxel_size,
-        }
 
         job.progress_percentage = 90
         job.save(update_fields=["progress_percentage", "updated_at"])
@@ -244,7 +255,7 @@ def run_poresize_job(self, job_id):
         with transaction.atomic():
             AnalysisResult.objects.update_or_create(
                 job=job,
-                defaults={"metrics": {"solution": result}},
+                defaults={"metrics": {"solution": solution}},
             )
             job.status = JobStatus.COMPLETED
             job.completed_at = timezone.now()

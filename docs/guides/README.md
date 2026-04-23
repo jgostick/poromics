@@ -8,6 +8,7 @@ This folder contains focused guidance for coding-agent sessions.
 2. `backend-django.md` (Django and data model conventions)
 3. `frontend-ui.md` (templates, assets, JS patterns)
 4. `operations-jobs.md` (Celery, remote compute, debugging)
+5. `remote-python-analyses.md` (generic remote Python runner and analysis extension workflow)
 
 ## Related Technical Docs
 

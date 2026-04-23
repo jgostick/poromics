@@ -332,13 +332,25 @@ def pore_size_launch(request, team_slug):
 
             # 3) Pick queue directly from the submitted form.
             queue = params["queue_name"]
-            job_params = _with_routing_metadata(params, queue=queue)
+            endpoint = get_queue_endpoint(queue, default="").strip()
+            job_params = _with_routing_metadata(params, queue=queue, endpoint_url=endpoint or None)
 
             # 4) Ensure broker connectivity before creating enqueue side effects
             ok, reason = _broker_ready(TASK_FUNCTION.app)
             if not ok:
                 messages.error(request, _("Queue service unavailable. %(reason)s") % {"reason": reason})
                 return redirect(REDIRECT_NAME_ON_ERROR, team_slug=team_slug)
+
+            if endpoint:
+                from python_remote_client import _server_healthy as _python_server_healthy
+
+                if not _python_server_healthy(endpoint):
+                    messages.error(
+                        request,
+                        _("Python remote service for queue '%(queue)s' is unreachable at %(endpoint)s.")
+                        % {"queue": queue, "endpoint": endpoint},
+                    )
+                    return redirect(REDIRECT_NAME_ON_ERROR, team_slug=team_slug)
 
             # 5) Create AnalysisJob row and charge credits up front
             try:
@@ -357,11 +369,15 @@ def pore_size_launch(request, team_slug):
                 task = TASK_FUNCTION.apply_async(args=[str(job.id)], queue=queue)
             except Exception as exc:
                 _mark_enqueue_failure_with_refund(job, exc)
+                error_template = _("Could not queue job on '%(queue)s'. %(reason)s")
+                if endpoint:
+                    error_template = _("Could not queue job on '%(queue)s' (endpoint %(endpoint)s). %(reason)s")
                 messages.error(
                     request,
-                    _("Could not queue job on '%(queue)s'. %(reason)s")
+                    error_template
                     % {
                         "queue": queue,
+                        "endpoint": endpoint,
                         "reason": str(exc),
                     },
                 )

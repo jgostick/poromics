@@ -144,6 +144,18 @@ queues:
     pricing:
       default_credits_per_million_voxels: "1.0000"
 
+  - name: poresize-remote
+    display_name: poresize-remote
+    backend_key: remote
+    compute_system: cpu
+    analyses:
+      - poresize
+    endpoint_url: http://129.97.161.145:3100
+    enabled: false
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "1.2500"
+
   - name: network-cpu
     display_name: network-cpu
     backend_key: cpu
