@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from .analysis.pricing import refund_job_charge
 from .models import AnalysisJob, AnalysisResult, JobStatus
+from .queue_catalog import get_queue_endpoint
 
 log = logging.getLogger(__name__)
 
@@ -33,15 +34,13 @@ def _get_task_queue_name(task_request, default_queue: str) -> str:
 
 
 def _resolve_taichi_endpoint(queue_name: str) -> str:
-    queue_endpoints = getattr(settings, "TAICHI_QUEUE_ENDPOINTS", {})
     default_endpoint = getattr(settings, "TAICHI_DEFAULT_SERVER_URL", "")
-    return str(queue_endpoints.get(queue_name, default_endpoint)).strip()
+    return get_queue_endpoint(queue_name, default=default_endpoint).strip()
 
 
 def _resolve_julia_endpoint(queue_name: str) -> str:
-    queue_endpoints = getattr(settings, "JULIA_QUEUE_ENDPOINTS", {})
     default_endpoint = getattr(settings, "JULIA_DEFAULT_SERVER_URL", "http://127.0.0.1:2999")
-    return str(queue_endpoints.get(queue_name, default_endpoint))
+    return get_queue_endpoint(queue_name, default=default_endpoint)
 
 
 def _resolve_endpoint_for_job(job: AnalysisJob, queue_name: str, *, compute: str) -> str:

@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import logging
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+log = logging.getLogger(__name__)
+
+_CATALOG_CACHE: dict[str, Any] | None = None
+_CATALOG_CACHE_PATH: str | None = None
+_CATALOG_CACHE_MTIME_NS: int | None = None
 
 
 class QueueCatalogError(Exception):
@@ -182,9 +189,41 @@ def load_queue_catalog(path: str | Path) -> dict[str, Any]:
 def _get_catalog() -> dict[str, Any]:
     from django.conf import settings
 
-    catalog = getattr(settings, "QUEUE_CATALOG", None)
-    if not isinstance(catalog, dict):
-        raise QueueCatalogError("QUEUE_CATALOG is not configured in settings.")
+    global _CATALOG_CACHE, _CATALOG_CACHE_MTIME_NS, _CATALOG_CACHE_PATH
+
+    catalog_path = Path(getattr(settings, "QUEUE_CATALOG_PATH", default_catalog_path()))
+    catalog_path_key = str(catalog_path)
+
+    try:
+        mtime_ns = catalog_path.stat().st_mtime_ns
+    except FileNotFoundError as exc:
+        raise QueueCatalogError(f"Queue catalog file does not exist: {catalog_path}") from exc
+
+    if (
+        _CATALOG_CACHE is not None
+        and catalog_path_key == _CATALOG_CACHE_PATH
+        and mtime_ns == _CATALOG_CACHE_MTIME_NS
+    ):
+        return _CATALOG_CACHE
+
+    try:
+        catalog = load_queue_catalog(catalog_path)
+    except QueueCatalogError:
+        if _CATALOG_CACHE is not None and catalog_path_key == _CATALOG_CACHE_PATH:
+            log.warning(
+                "Queue catalog reload failed for %s; using previous in-memory catalog.",
+                catalog_path,
+                exc_info=True,
+            )
+            return _CATALOG_CACHE
+        raise
+
+    _CATALOG_CACHE = catalog
+    _CATALOG_CACHE_PATH = catalog_path_key
+    _CATALOG_CACHE_MTIME_NS = mtime_ns
+
+    # Keep settings in sync for code paths that inspect settings.QUEUE_CATALOG directly.
+    settings.QUEUE_CATALOG = catalog
     return catalog
 
 

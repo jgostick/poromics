@@ -7,6 +7,10 @@ analysis_defaults:
   network_extraction: network-cpu
   network_validation: network-validation
 
+# To start a queue, use a variation of the following:
+# TAICHI_BACKEND=metal uv run celery -A poromics worker -Q taichi-metal -n taichi-metal@%h --pool=solo -l INFO
+# And be add the corresponding block below..
+
 queues:
   - name: kabs-cpu
     display_name: kabs-cpu
@@ -27,6 +31,18 @@ queues:
     analyses:
       - permeability
     endpoint_url: ""
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "2.0000"
+
+  - name: taichi-gpu
+    display_name: taichi-gpu
+    backend_key: gpu
+    compute_system: taichi
+    analyses:
+      - permeability
+    endpoint_url: http://129.97.161.145:3000
     enabled: true
     capabilities: []
     pricing:

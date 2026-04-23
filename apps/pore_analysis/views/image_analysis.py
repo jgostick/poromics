@@ -26,6 +26,7 @@ from apps.pore_analysis.forms import (
     PoreSizeLaunchForm,
 )
 from apps.pore_analysis.models import AnalysisJob, AnalysisType, JobStatus, UploadedImage
+from apps.pore_analysis.queue_catalog import get_queue_endpoint
 from apps.pore_analysis.tasks import (
     run_diffusivity_job,
     run_network_extraction_job,
@@ -170,7 +171,7 @@ def permeability_launch(request, team_slug):
             image = form.cleaned_data["image"]
             params = form.to_parameters()
             queue = params["queue_name"]
-            endpoint = settings.TAICHI_QUEUE_ENDPOINTS.get(queue, settings.TAICHI_DEFAULT_SERVER_URL).strip()
+            endpoint = get_queue_endpoint(queue, default=settings.TAICHI_DEFAULT_SERVER_URL).strip()
             job_params = _with_routing_metadata(params, queue=queue, endpoint_url=endpoint or None)
 
             ok, reason = _broker_ready(run_permeability_job.app)
@@ -246,7 +247,7 @@ def diffusivity_launch(request, team_slug):
             image = form.cleaned_data["image"]
             params = form.to_parameters()
             queue = params["queue_name"]
-            endpoint = settings.JULIA_QUEUE_ENDPOINTS.get(queue, settings.JULIA_DEFAULT_SERVER_URL)
+            endpoint = get_queue_endpoint(queue, default=settings.JULIA_DEFAULT_SERVER_URL)
             job_params = _with_routing_metadata(params, queue=queue, endpoint_url=endpoint)
 
             ok, reason = _broker_ready(run_diffusivity_job.app)
