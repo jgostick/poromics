@@ -133,12 +133,23 @@ def admin_credits(request):
 
 @_superuser_required
 def admin_celery(request):
-    status = get_celery_status()
     return TemplateResponse(
         request,
         "dashboard/site_admin/celery.html",
         context={
             "active_tab": "admin-celery",
+        },
+    )
+
+
+@_superuser_required
+def admin_celery_status(request):
+    status = get_celery_status()
+    return TemplateResponse(
+        request,
+        "dashboard/site_admin/_celery_status.html",
+        context={
             "celery": status,
+            "status_refreshed_at": timezone.now(),
         },
     )
