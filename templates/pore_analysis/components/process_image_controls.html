@@ -1,17 +1,60 @@
 {% load i18n %}
 
 <div id="operation-controls" hx-swap-oob="true">
-  <div class="card bg-base-100 shadow">
-    <div class="card-body gap-3">
-      <h3 class="font-semibold">{% translate "Fill Invalid Pores" %}</h3>
-      <p class="text-sm text-base-content/70">
-        {% translate "This operation fills invalid pore regions in a boolean image using porespy." %}
-      </p>
-      <div class="alert alert-info text-sm">
-        <i class="fa fa-circle-info"></i>
-        <span>
-          {% translate "Only boolean images are supported for this tool." %}
-        </span>
+  <div x-data="{ operationPipeline: [] }" class="space-y-4">
+    <input type="hidden" name="operation_pipeline" :value="JSON.stringify(operationPipeline)">
+
+    <div class="alert alert-info text-sm">
+      <i class="fa fa-circle-info"></i>
+      <span>
+        {% translate "Only boolean images are supported for this tool. Each Apply appends to the current pipeline." %}
+      </span>
+    </div>
+
+    <div class="card bg-base-100 shadow">
+      <div class="card-body gap-3">
+        <h3 class="font-semibold">{% translate "Fill Invalid Pores" %}</h3>
+        <p class="text-sm text-base-content/70">
+          {% translate "Fill invalid pore regions in the current image state." %}
+        </p>
+        <button type="button"
+                class="btn btn-primary btn-sm w-full"
+                @click="operationPipeline.push('fill_invalid_pores')"
+                hx-post="{{ preview_url }}"
+                hx-target="#preview-panel"
+                hx-include="#tool-form">
+          <i class="fa fa-play mr-1"></i>
+          {% translate "Apply Fill Invalid Pores" %}
+        </button>
+      </div>
+    </div>
+
+    <div class="card bg-base-100 shadow">
+      <div class="card-body gap-3">
+        <h3 class="font-semibold">{% translate "Trim Floating Solid" %}</h3>
+        <p class="text-sm text-base-content/70">
+          {% translate "Remove disconnected floating solid islands from the current image state." %}
+        </p>
+        <button type="button"
+                class="btn btn-primary btn-sm w-full"
+                @click="operationPipeline.push('trim_floating_solid')"
+                hx-post="{{ preview_url }}"
+                hx-target="#preview-panel"
+                hx-include="#tool-form">
+          <i class="fa fa-play mr-1"></i>
+          {% translate "Apply Trim Floating Solid" %}
+        </button>
+      </div>
+    </div>
+
+    <div class="card bg-base-100 shadow" x-show="operationPipeline.length > 0" x-cloak>
+      <div class="card-body gap-2">
+        <h3 class="font-semibold text-sm">{% translate "Applied sequence" %}</h3>
+        <ol class="list-decimal ml-4 text-sm text-base-content/80 space-y-1">
+          <template x-for="(operation, index) in operationPipeline" :key="`${operation}-${index}`">
+            <li x-text="operation"></li>
+          </template>
+        </ol>
       </div>
     </div>
   </div>

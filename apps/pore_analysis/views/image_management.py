@@ -1,3 +1,4 @@
+import logging
 import os
 from io import BytesIO
 
@@ -14,10 +15,11 @@ from apps.teams.decorators import login_and_team_required
 
 from .utils import get_pore_analysis_context
 
+logger = logging.getLogger(__name__)
 
 MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
-UPLOAD_ALLOWED_EXTENSIONS = {'.npy', '.raw', '.stl', '.tif', '.tiff'}
-UPLOAD_SUPPORTED_EXTENSIONS = {'.npy', '.raw', '.tif', '.tiff'}
+UPLOAD_ALLOWED_EXTENSIONS = {'.npy', '.raw', '.stl', '.tif', '.tiff', '.npz'}
+UPLOAD_SUPPORTED_EXTENSIONS = {'.npy', '.raw', '.tif', '.tiff', '.npz'}
 RAW_DTYPE_OPTIONS = ('uint8', 'uint16', 'uint32', 'float32', 'float64')
 
 
@@ -259,11 +261,12 @@ def upload_image(request, team_slug):
             # Validate required fields
             if not uploaded_file:
                 return JsonResponse({'success': False, 'message': _('No file uploaded')})
-            
-            if not name:
-                return JsonResponse({'success': False, 'message': _('Image name is required')})
 
             extension = _get_file_extension(uploaded_file.name)
+
+            # NPZ uploads derive names from archive keys — name field not required
+            if not name and extension != '.npz':
+                return JsonResponse({'success': False, 'message': _('Image name is required')})
             if extension not in UPLOAD_ALLOWED_EXTENSIONS:
                 return JsonResponse({'success': False, 'message': _('Unsupported file extension')})
 
@@ -315,6 +318,87 @@ def upload_image(request, team_slug):
                     except ValueError as exc:
                         return JsonResponse({'success': False, 'message': str(exc)})
 
+                elif extension == '.npz':
+                    # NPZ: each archive key becomes a separate UploadedImage.
+                    # Parse voxel size early so it applies to all keys.
+                    voxel_size_value = None
+                    if voxel_size:
+                        try:
+                            voxel_size_value = float(voxel_size)
+                            if voxel_size_value <= 0:
+                                return JsonResponse({'success': False, 'message': _('Voxel size must be positive')})
+                        except ValueError:
+                            return JsonResponse({'success': False, 'message': _('Invalid voxel size')})
+
+                    try:
+                        archive = np.load(BytesIO(file_bytes), allow_pickle=False)
+                    except Exception:
+                        return JsonResponse({'success': False, 'message': _('Invalid .npz file format')})
+
+                    created_images = []
+                    skipped_keys = []
+                    for key in archive.files:
+                        arr = archive[key]
+                        if arr.dtype != bool:
+                            skipped_keys.append(_('{key} (not boolean)').format(key=key))
+                            continue
+                        if arr.ndim < 2 or arr.ndim > 3:
+                            skipped_keys.append(
+                                _('{key} ({ndim}D — must be 2D or 3D)').format(key=key, ndim=arr.ndim)
+                            )
+                            continue
+
+                        content_file, content_size = _build_npy_content_file(arr, f'{key}.npy')
+                        img = UploadedImage.objects.create(
+                            team=request.team,
+                            uploaded_by=request.user,
+                            name=key,
+                            description=description,
+                            file=content_file,
+                            file_size=content_size,
+                            dimensions=list(arr.shape),
+                            voxel_size=voxel_size_value,
+                        )
+                        img.save()
+
+                        try:
+                            if img.generate_thumbnail():
+                                img.save()
+                        except Exception as exc:
+                            logger.warning('NPZ thumbnail failed for key %s: %s', key, exc)
+
+                        try:
+                            img.compute_metrics(save=True)
+                        except Exception as exc:
+                            logger.warning('NPZ metrics failed for key %s: %s', key, exc)
+
+                        created_images.append(img)
+
+                    if not created_images:
+                        return JsonResponse(
+                            {
+                                'success': False,
+                                'message': _(
+                                    'No valid boolean arrays found in the NPZ archive. All keys were skipped.'
+                                ),
+                            }
+                        )
+
+                    msg_parts = [
+                        _('{count} image(s) uploaded from NPZ archive.').format(count=len(created_images))
+                    ]
+                    if skipped_keys:
+                        msg_parts.append(_('Skipped: {keys}').format(keys=', '.join(skipped_keys)))
+                    success_msg = ' '.join(msg_parts)
+
+                    redirect_url = f'/a/{team_slug}/pore-analysis/images/'
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return JsonResponse(
+                            {'success': True, 'message': success_msg, 'redirect_url': redirect_url}
+                        )
+                    messages.success(request, success_msg)
+                    return redirect('pore_analysis_team:image_list', team_slug=team_slug)
+
                 else:
                     return JsonResponse({'success': False, 'message': _('Unsupported file type')})
 
@@ -353,8 +437,6 @@ def upload_image(request, team_slug):
             uploaded_image.save()
             
             # Generate thumbnail using porespy
-            import logging
-            logger = logging.getLogger(__name__)
             try:
                 logger.info(f"Attempting to generate thumbnail for {uploaded_image.name}")
                 logger.info(f"File path: {uploaded_image.file.path}")
@@ -407,7 +489,7 @@ def upload_image(request, team_slug):
     return render(request, 'pore_analysis/upload_image.html', context)
 
 
-def _render_orthoslice(request, image, x_idx, y_idx, z_idx, zoom_factor=1.2):
+def _render_orthoslice(request, image, x_idx, y_idx, z_idx, zoom_factor=1.2, downsample_step=3):
     """Render orthogonal slice planes in a 3D scene (server-side)."""
     import base64
     from io import BytesIO
@@ -438,9 +520,10 @@ def _render_orthoslice(request, image, x_idx, y_idx, z_idx, zoom_factor=1.2):
         y_idx = max(0, min(int(y_idx), max_y - 1))
         z_idx = max(0, min(int(z_idx), max_z - 1))
         zoom_factor = max(0.8, min(float(zoom_factor), 3.0))
+        downsample_step = max(1, int(downsample_step))
 
-        # Downsample large volumes before 3D rendering to keep response latency low.
-        step = max(1, max(max_x, max_y, max_z) // 180)
+        # User-selected step: 1 keeps original resolution, 2 keeps every other voxel, etc.
+        step = downsample_step
         volume = np.asarray(arr[::step, ::step, ::step], dtype=np.uint8)
 
         x_small = max(0, min(x_idx // step, volume.shape[0] - 1))
@@ -458,9 +541,11 @@ def _render_orthoslice(request, image, x_idx, y_idx, z_idx, zoom_factor=1.2):
             scalars="InsideMesh",
             cmap="viridis",
             show_scalar_bar=False,
-            lighting=False,
+            lighting=True,
+            ambient=0.75,
             clim=[0, 1],
         )
+        plotter.enable_eye_dome_lighting()
         plotter.camera_position = "iso"
         plotter.camera.zoom(zoom_factor)
         image_array = plotter.screenshot(return_img=True)
@@ -514,5 +599,18 @@ def orthoslice_preview(request, team_slug, image_id):
         zoom_factor = float(request.POST.get("zoom", "1.2"))
     except ValueError:
         zoom_factor = 1.2
+    
+    try:
+        downsample_step = max(1, int(request.POST.get("downsample_step", "3")))
+    except ValueError:
+        downsample_step = 3
 
-    return _render_orthoslice(request, image, x_idx, y_idx, z_idx, zoom_factor=zoom_factor)
+    return _render_orthoslice(
+        request,
+        image,
+        x_idx,
+        y_idx,
+        z_idx,
+        zoom_factor=zoom_factor,
+        downsample_step=downsample_step,
+    )

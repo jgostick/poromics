@@ -132,6 +132,7 @@
                    x-model.number="zoomFactor"
                    @input="queueUpdate()">
           </div>
+          
         </div>
         {% endif %}
 
@@ -140,6 +141,19 @@
             <span class="loading loading-spinner loading-lg"></span>
           </div>
         </div>
+        {% if orthoslice.is_3d %}
+        <div class="mt-4 w-1/4">
+          <label class="flex justify-between text-sm font-medium text-gray-700 mb-1">
+            <span>{% translate "Downsample" %}</span>
+            <!-- <span class="font-mono" x-text="downsampleStep"></span> -->
+          </label>
+          <input type="number" min="1" step="1"
+                  class="input input-bordered input-sm w-full"
+                  x-model.number="downsampleStep"
+                  @input="queueUpdate()">
+          <p class="mt-1 text-xs text-gray-500">{% translate "1=original, 2=every other voxel, 3=every 3rd voxel" %}</p>
+        </div>
+        {% endif %}
       </div>
 
       <!-- Analysis Jobs -->
@@ -247,6 +261,7 @@
         yIdx: Math.floor(maxY / 2),
         zIdx: Math.floor(maxZ / 2),
         zoomFactor: 1.2,
+        downsampleStep: 3,
         maxX,
         maxY,
         maxZ,
@@ -269,6 +284,7 @@
               y_idx: this.yIdx,
               z_idx: this.zIdx,
               zoom: this.zoomFactor,
+              downsample_step: this.downsampleStep,
             },
           });
         },

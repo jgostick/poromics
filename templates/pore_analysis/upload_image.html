@@ -9,7 +9,7 @@
   <!-- Header -->
   <div class="mb-8">
     <h1 class="text-3xl font-bold text-base-content">{% translate "Upload Volumetric Image" %}</h1>
-    <p class="text-base-content/70 mt-2">{% translate "Upload an approved file type (.npy, .raw, .tif, .tiff, .stl)" %}</p>
+    <p class="text-base-content/70 mt-2">{% translate "Upload an approved file type (.npy, .raw, .tif, .tiff, .npz)" %}</p>
   </div>
 
   <!-- Upload Form -->
@@ -66,19 +66,27 @@
 
             <!-- Hidden File Input -->
             <input type="file" x-ref="fileInput" @change="handleFileSelect($event)" 
-                   accept=".npy,.raw,.tif,.tiff,.stl" class="hidden" name="file" required>
+                   accept=".npy,.raw,.tif,.tiff,.npz,.stl" class="hidden" name="file" required>
           </div>
         </div>
 
         <!-- Image Details Form -->
         <div class="space-y-4 mb-6">
-          <div class="form-control">
+          <!-- Name field: hidden for NPZ uploads (names come from archive keys) -->
+          <div class="form-control" x-show="selectedExtension !== '.npz'">
             <label class="label" for="name">
               <span class="label-text">{% translate "Image Name" %}</span>
             </label>
-            <input type="text" id="name" name="name" required 
+            <input type="text" id="name" name="name"
+                   :required="selectedExtension !== '.npz'"
                    class="input input-bordered w-full"
                    placeholder="{% translate 'Enter a descriptive name for your image' %}">
+          </div>
+          <div class="alert alert-info py-2" x-show="selectedExtension === '.npz'">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 shrink-0">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+            </svg>
+            <span class="text-sm">{% translate "Image names will be taken from the NPZ archive keys. Each key becomes a separate image." %}</span>
           </div>
           <div class="grid grid-cols-10 gap-2">
             <div class="col-span-7 form-control">
@@ -94,7 +102,7 @@
               <label for="voxel_size" class="mb-2 block">
                 <span class="label-text">{% translate "Voxel Size" %} (µm) <span class="text-base-content/70">({% translate "Optional" %})</span></span>
               </label>
-              <input type="number" id="voxel_size" name="voxel_size" step="0.001" min="0"
+              <input type="number" id="voxel_size" name="voxel_size" step="0.000000001" min="0"
                     class="input input-bordered w-full"
                     placeholder="{% translate 'e.g., 0.65' %}">
             </div>
@@ -176,12 +184,11 @@
     <div>
       <h3 class="font-semibold">{% translate "File Requirements:" %}</h3>
       <ul class="text-sm space-y-1 mt-2">
-        <li>• {% translate "Approved formats: .npy, .raw, .tif, .tiff, .stl" %}</li>
-        <li>• {% translate "Current support: .npy, .raw, .tif, and .tiff (.stl coming soon)" %}</li>
+        <li>• {% translate "Approved formats: .npy, .raw, .tif, .tiff, .npz (.stl coming soon)" %}</li>
+        <li>• {% translate "NPZ: upload many images at once — names taken from archive keys, voxel size applied to all" %}</li>
+        <li>• {% translate ".npy / NPZ arrays must be boolean (True = pore, False = solid)" %}</li>
         <li>• {% translate "RAW uploads require width, height, depth, and dtype" %}</li>
-        <li>• {% translate "Single TIFF uploads do not require extra metadata" %}</li>
-        <li>• {% translate ".npy uploads must contain boolean arrays (True = pore, False = solid)" %}</li>
-        <li>• {% translate "Maximum file size: 1GB" %}</li>
+        <li>• {% translate "Maximum file size: 1 GB" %}</li>
         <li>• {% translate "3D arrays preferred, but 2D is supported" %}</li>
       </ul>
     </div>
@@ -214,7 +221,7 @@ function uploadHandler() {
 
     setFile(file) {
       const extension = this.getFileExtension(file.name);
-      const allowedExtensions = ['.npy', '.raw', '.tif', '.tiff', '.stl'];
+      const allowedExtensions = ['.npy', '.raw', '.tif', '.tiff', '.npz', '.stl'];
       if (!allowedExtensions.includes(extension)) {
         alert('Please select an approved file type (.npy, .raw, .tif, .tiff, .stl)');
         return;
@@ -231,11 +238,13 @@ function uploadHandler() {
       if (this.selectedExtension === '.raw') {
         this.prefillRawDimensions();
       }
-      
-      // Set default name from filename
-      const nameInput = document.getElementById('name');
-      if (!nameInput.value) {
-        nameInput.value = file.name.replace(/\.[^/.]+$/, '');
+
+      // NPZ names come from archive keys — don't auto-fill the name field
+      if (this.selectedExtension !== '.npz') {
+        const nameInput = document.getElementById('name');
+        if (!nameInput.value) {
+          nameInput.value = file.name.replace(/\.[^/.]+$/, '');
+        }
       }
     },
 

@@ -8,6 +8,7 @@
   - [ ] From a TIFF file
   - [ ] From STL files
   - [ ] From a collection of 2D TIFF images
+  - [ ] From NPZ file collections. The keys would be image names, and voxel size can be entered once for all images or left empty and added later
 - [ ] Add ability to specify a dropbox or other cloud link as upload file location, not just local PC
 - [ ] Tidy up the header region in the layout to remove the extra stuff at the top.
 - [ ] Ensure that all 'success' messages are done as overlaying pop-ups in the top right corner rather than banners which shift the entire UI down.

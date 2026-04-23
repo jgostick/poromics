@@ -1,3 +1,4 @@
+import json
 from io import BytesIO
 
 import numpy as np
@@ -355,7 +356,6 @@ def trim_image_preview(request, team_slug):
 # ---------------------------------------------------------------------------
 # Adjust Values – private helpers
 # ---------------------------------------------------------------------------
-
 def _apply_adjust_operation(arr: np.ndarray, operation: str, void_value: str = "") -> np.ndarray:
     """Apply an adjust-values operation and return the result array."""
     if operation == "invert":
@@ -389,7 +389,6 @@ def _save_adjusted_image(request, team_slug, image, result: np.ndarray, save_as:
 # ---------------------------------------------------------------------------
 # Adjust Values – views
 # ---------------------------------------------------------------------------
-
 @login_and_team_required
 def adjust_values(request, team_slug):
     """Main page: GET renders the tool shell; POST (action=save) persists the result."""
@@ -526,6 +525,61 @@ def adjust_values_preview(request, team_slug):
     )
 
 
+PROCESS_IMAGE_SUPPORTED_OPERATIONS = {
+    "fill_invalid_pores",
+    "trim_floating_solid",
+}
+
+
+def _parse_process_operation_pipeline(raw_pipeline: str) -> list[str]:
+    """Parse and validate the posted cleaning operation pipeline."""
+    if not raw_pipeline:
+        raise ValueError(_("Please apply at least one operation before saving."))
+
+    try:
+        operations = json.loads(raw_pipeline)
+    except json.JSONDecodeError as exc:
+        raise ValueError(_("Invalid operation pipeline.")) from exc
+
+    if not isinstance(operations, list) or not operations:
+        raise ValueError(_("Please apply at least one operation before saving."))
+
+    normalized_operations = []
+    for operation in operations:
+        if not isinstance(operation, str):
+            raise ValueError(_("Invalid operation pipeline."))
+        op = operation.strip()
+        if op not in PROCESS_IMAGE_SUPPORTED_OPERATIONS:
+            raise ValueError(_("Unknown operation: {}").format(op))
+        normalized_operations.append(op)
+
+    return normalized_operations
+
+
+def _apply_process_operation(arr: np.ndarray, operation: str) -> np.ndarray:
+    """Apply a single cleaning operation to a boolean image array."""
+    if arr.dtype.kind != "b":
+        raise ValueError(_("Selected image must be a boolean array."))
+
+    bool_arr = arr.astype(bool, copy=False)
+    if operation == "fill_invalid_pores":
+        result = ps.filters.fill_invalid_pores(bool_arr)
+    elif operation == "trim_floating_solid":
+        result = ps.filters.trim_floating_solid(bool_arr)
+    else:
+        raise ValueError(_("Unknown operation: {}").format(operation))
+
+    return np.asarray(result).astype(bool, copy=False)
+
+
+def _apply_process_operation_pipeline(arr: np.ndarray, operations: list[str]) -> np.ndarray:
+    """Apply cleaning operations cumulatively in the provided order."""
+    processed = arr
+    for operation in operations:
+        processed = _apply_process_operation(processed, operation)
+    return processed
+
+
 @login_and_team_required
 def process_image(request, team_slug):
     """Main cleaning page: GET renders the tool shell; POST (action=save) persists the result."""
@@ -539,9 +593,8 @@ def process_image(request, team_slug):
 
         try:
             arr = _load_uploaded_image_array(image)
-            if arr.dtype.kind != "b":
-                raise ValueError(_("Selected image must be a boolean array."))
-            processed = ps.filters.fill_invalid_pores(arr.astype(bool, copy=False)).astype(bool, copy=False)
+            operations = _parse_process_operation_pipeline(request.POST.get("operation_pipeline", "").strip())
+            processed = _apply_process_operation_pipeline(arr, operations)
         except Exception as exc:
             messages.error(request, _("Processing failed: {}").format(str(exc)))
             return redirect("pore_analysis_team:process_image", team_slug=team_slug)
@@ -596,7 +649,9 @@ def process_image_load_image(request, team_slug):
     )
     controls_html = render_to_string(
         "pore_analysis/components/process_image_controls.html",
-        {},
+        {
+            "preview_url": reverse("pore_analysis_team:process_image_preview", kwargs={"team_slug": team_slug}),
+        },
         request=request,
     )
     return HttpResponse(preview_html + controls_html)
@@ -604,7 +659,7 @@ def process_image_load_image(request, team_slug):
 
 @login_and_team_required
 def process_image_preview(request, team_slug):
-    """POST: apply fill_invalid_pores in memory and return a processed preview."""
+    """POST: apply cumulative cleaning operations and return a processed preview."""
     from apps.pore_analysis.analysis.preview import array_to_preview_png
 
     image_id = request.POST.get("image_id", "").strip()
@@ -619,15 +674,14 @@ def process_image_preview(request, team_slug):
     image = get_object_or_404(UploadedImage, id=image_id, team=request.team)
     try:
         arr = _load_uploaded_image_array(image)
-        if arr.dtype.kind != "b":
-            raise ValueError(_("Selected image must be a boolean array."))
-        processed = ps.filters.fill_invalid_pores(arr.astype(bool, copy=False)).astype(bool, copy=False)
+        operations = _parse_process_operation_pipeline(request.POST.get("operation_pipeline", "").strip())
+        processed = _apply_process_operation_pipeline(arr, operations)
         preview_b64 = array_to_preview_png(processed)
     except Exception as exc:
         return render(
             request,
             "pore_analysis/components/tool_preview.html",
-            {"error": _("Processing failed: {}" ).format(str(exc)), "state": "error"},
+            {"error": _("Processing failed: {}").format(str(exc)), "state": "error"},
         )
 
     save_url = reverse("pore_analysis_team:process_image", kwargs={"team_slug": team_slug})
@@ -639,7 +693,11 @@ def process_image_preview(request, team_slug):
             "state": "processed",
             "save_url": save_url,
             "image_id": str(image_id),
-            "hidden_inputs": [("action", "save")],
+            "summary_text": _("Applied operations: {}").format(" -> ".join(operations)),
+            "hidden_inputs": [
+                ("action", "save"),
+                ("operation_pipeline", json.dumps(operations)),
+            ],
             "suggested_name": image.name,
             "save_new_suffix": "cleaned",
         },
