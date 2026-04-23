@@ -1,7 +1,7 @@
 from decimal import Decimal
 
-from django.contrib import messages
 from django.conf import settings
+from django.contrib import messages
 from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -36,11 +36,6 @@ from apps.pore_analysis.tasks import (
 from apps.teams.decorators import login_and_team_required
 
 from .utils import (
-    BASIC_CPU_QUEUE_MAP,
-    JULIA_QUEUE_MAP,
-    NETWORK_EXTRACTION_QUEUE_MAP,
-    NETWORK_VALIDATION_QUEUE_MAP,
-    TAICHI_QUEUE_MAP,
     get_pore_analysis_context,
 )
 
@@ -49,17 +44,17 @@ from .utils import (
 def start_analysis(request, team_slug, image_id):
     """Start a new analysis on an uploaded image."""
     get_object_or_404(UploadedImage, id=image_id, team=request.team)
-    
-    if request.method == 'POST':
-        analysis_type = request.POST.get('analysis_type')
+
+    if request.method == "POST":
+        analysis_type = request.POST.get("analysis_type")
         if analysis_type in dict(AnalysisType.choices):
             # TODO: Create analysis job and start Celery task
-            messages.success(request, _('Analysis started!'))
-            return redirect('pore_analysis:image_detail', team_slug=team_slug, image_id=image_id)
+            messages.success(request, _("Analysis started!"))
+            return redirect("pore_analysis:image_detail", team_slug=team_slug, image_id=image_id)
         else:
-            messages.error(request, _('Invalid analysis type selected.'))
-    
-    return redirect('pore_analysis:image_detail', team_slug=team_slug, image_id=image_id)
+            messages.error(request, _("Invalid analysis type selected."))
+
+    return redirect("pore_analysis:image_detail", team_slug=team_slug, image_id=image_id)
 
 
 def _broker_ready(app) -> tuple[bool, str]:
@@ -116,8 +111,7 @@ def _handle_pricing_errors(request, exc: Exception, redirect_name: str, team_slu
     if isinstance(exc, NoPricingRateError):
         messages.error(
             request,
-            _("Pricing is not configured for this analysis/backend. %(reason)s")
-            % {"reason": str(exc)},
+            _("Pricing is not configured for this analysis queue. %(reason)s") % {"reason": str(exc)},
         )
     elif isinstance(exc, InsufficientCreditsError):
         messages.error(
@@ -131,6 +125,7 @@ def _handle_pricing_errors(request, exc: Exception, redirect_name: str, team_slu
 def estimate_job_cost(request, team_slug):
     analysis_type = (request.GET.get("analysis_type") or "").strip()
     image_id = (request.GET.get("image") or "").strip()
+    queue_name = (request.GET.get("queue_name") or "").strip()
     backend = (request.GET.get("backend") or "default").strip()
 
     if analysis_type not in dict(AnalysisType.choices):
@@ -148,7 +143,10 @@ def estimate_job_cost(request, team_slug):
         estimated_credits = calculate_estimated_credits(
             image=image,
             analysis_type=analysis_type,
-            parameters={"backend": backend},
+            parameters={
+                "queue_name": queue_name,
+                "backend": backend,
+            },
         )
         balance = get_team_credit_balance(request.team)
     except NoPricingRateError as exc:
@@ -171,7 +169,7 @@ def permeability_launch(request, team_slug):
         if form.is_valid():
             image = form.cleaned_data["image"]
             params = form.to_parameters()
-            queue = TAICHI_QUEUE_MAP.get(params["backend"], "kabs-cpu")
+            queue = params["queue_name"]
             endpoint = settings.TAICHI_QUEUE_ENDPOINTS.get(queue, settings.TAICHI_DEFAULT_SERVER_URL).strip()
             job_params = _with_routing_metadata(params, queue=queue, endpoint_url=endpoint or None)
 
@@ -213,12 +211,11 @@ def permeability_launch(request, team_slug):
                 _mark_enqueue_failure_with_refund(job, exc)
                 error_template = _("Could not queue job on '%(queue)s'. %(reason)s")
                 if endpoint:
-                    error_template = _(
-                        "Could not queue job on '%(queue)s' (endpoint %(endpoint)s). %(reason)s"
-                    )
+                    error_template = _("Could not queue job on '%(queue)s' (endpoint %(endpoint)s). %(reason)s")
                 messages.error(
                     request,
-                    error_template % {
+                    error_template
+                    % {
                         "queue": queue,
                         "endpoint": endpoint,
                         "reason": str(exc),
@@ -248,7 +245,7 @@ def diffusivity_launch(request, team_slug):
         if form.is_valid():
             image = form.cleaned_data["image"]
             params = form.to_parameters()
-            queue = JULIA_QUEUE_MAP.get(params["backend"], "julia-cpu")
+            queue = params["queue_name"]
             endpoint = settings.JULIA_QUEUE_ENDPOINTS.get(queue, settings.JULIA_DEFAULT_SERVER_URL)
             job_params = _with_routing_metadata(params, queue=queue, endpoint_url=endpoint)
 
@@ -289,7 +286,8 @@ def diffusivity_launch(request, team_slug):
                 _mark_enqueue_failure_with_refund(job, exc)
                 messages.error(
                     request,
-                    _("Could not queue job on '%(queue)s' (endpoint %(endpoint)s). %(reason)s") % {
+                    _("Could not queue job on '%(queue)s' (endpoint %(endpoint)s). %(reason)s")
+                    % {
                         "queue": queue,
                         "endpoint": endpoint,
                         "reason": str(exc),
@@ -318,8 +316,6 @@ def pore_size_launch(request, team_slug):
     FORM_CLASS = PoreSizeLaunchForm
     ANALYSIS_TYPE_ENUM = AnalysisType.PORESIZE
     TASK_FUNCTION = run_poresize_job
-    QUEUE_MAP = BASIC_CPU_QUEUE_MAP
-    DEFAULT_QUEUE = "basic-cpu"
     TEMPLATE_PATH = "pore_analysis/poresize_launch.html"
     SUCCESS_MESSAGE = _("Pore size job queued.")
     REDIRECT_NAME_ON_ERROR = "pore_analysis_team:poresize_launch"
@@ -333,10 +329,8 @@ def pore_size_launch(request, team_slug):
             image = form.cleaned_data["image"]
             params = form.to_parameters()
 
-            # 3) Pick queue from backend param (or other dispatch key)
-            #    If your form has no backend field, hardcode queue instead.
-            queue_key = params.get("backend", "cpu")
-            queue = QUEUE_MAP.get(queue_key, DEFAULT_QUEUE)
+            # 3) Pick queue directly from the submitted form.
+            queue = params["queue_name"]
             job_params = _with_routing_metadata(params, queue=queue)
 
             # 4) Ensure broker connectivity before creating enqueue side effects
@@ -364,7 +358,8 @@ def pore_size_launch(request, team_slug):
                 _mark_enqueue_failure_with_refund(job, exc)
                 messages.error(
                     request,
-                    _("Could not queue job on '%(queue)s'. %(reason)s") % {
+                    _("Could not queue job on '%(queue)s'. %(reason)s")
+                    % {
                         "queue": queue,
                         "reason": str(exc),
                     },
@@ -398,7 +393,7 @@ def network_extraction_launch(request, team_slug):
         if form.is_valid():
             image = form.cleaned_data["image"]
             params = form.to_parameters()
-            queue = NETWORK_EXTRACTION_QUEUE_MAP.get(params["backend"], "network-cpu")
+            queue = params["queue_name"]
             job_params = _with_routing_metadata(params, queue=queue)
 
             ok, reason = _broker_ready(run_network_extraction_job.app)
@@ -458,7 +453,7 @@ def network_validation_launch(request, team_slug):
         if form.is_valid():
             image = form.cleaned_data["image"]
             params = form.to_parameters()
-            queue = NETWORK_VALIDATION_QUEUE_MAP["cpu"]
+            queue = params["queue_name"]
             job_params = _with_routing_metadata(params, queue=queue)
 
             ok, reason = _broker_ready(run_network_validation_job.app)
@@ -488,7 +483,8 @@ def network_validation_launch(request, team_slug):
                 _mark_enqueue_failure_with_refund(job, exc)
                 messages.error(
                     request,
-                    _("Could not queue job on '%(queue)s'. %(reason)s") % {
+                    _("Could not queue job on '%(queue)s'. %(reason)s")
+                    % {
                         "queue": queue,
                         "reason": str(exc),
                     },
@@ -518,14 +514,18 @@ def network_jobs_for_image(request, team_slug):
     image_id = (request.GET.get("image") or "").strip()
     jobs = AnalysisJob.objects.none()
     if image_id:
-        jobs = AnalysisJob.objects.filter(
-            team=request.team,
-            image_id=image_id,
-            analysis_type=AnalysisType.NETWORK_EXTRACTION,
-            status=JobStatus.COMPLETED,
-            result__network_file__isnull=False,
-        ).exclude(
-            result__network_file="",
-        ).order_by("-created_at")
+        jobs = (
+            AnalysisJob.objects.filter(
+                team=request.team,
+                image_id=image_id,
+                analysis_type=AnalysisType.NETWORK_EXTRACTION,
+                status=JobStatus.COMPLETED,
+                result__network_file__isnull=False,
+            )
+            .exclude(
+                result__network_file="",
+            )
+            .order_by("-created_at")
+        )
 
     return render(request, "pore_analysis/components/network_job_options.html", {"jobs": jobs})

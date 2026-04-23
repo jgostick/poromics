@@ -14,7 +14,16 @@ from pathlib import Path
 from typing import Any
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 from django.utils.translation import gettext_lazy
+
+from apps.pore_analysis.queue_catalog import (
+    QueueCatalogError,
+    build_backend_queue_map,
+    build_queue_endpoint_map,
+    default_catalog_path,
+    load_queue_catalog,
+)
 
 # Build paths inside the project like this: BASE_DIR / "subdir".
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -448,21 +457,21 @@ CACHES = {
     "default": DUMMY_CACHE if DEBUG else REDIS_CACHE,
 }
 
-# Julia tortuosity service routing
-JULIA_SERVER_HOST = env("JULIA_SERVER_HOST", default="127.0.0.1")
-JULIA_SERVER_PORT = env("JULIA_SERVER_PORT", default="2999")
-JULIA_DEFAULT_SERVER_URL = env(
-    "JULIA_DEFAULT_SERVER_URL",
-    default=f"http://{JULIA_SERVER_HOST}:{JULIA_SERVER_PORT}",
-)
+# Central queue catalog
+QUEUE_CATALOG_PATH = env("QUEUE_CATALOG_PATH", default=str(default_catalog_path()))
+try:
+    QUEUE_CATALOG = load_queue_catalog(QUEUE_CATALOG_PATH)
+except QueueCatalogError as exc:
+    raise ImproperlyConfigured(f"Invalid queue catalog at {QUEUE_CATALOG_PATH}: {exc}") from exc
 
-# Backend-to-queue mapping used by diffusivity launch form choices.
-JULIA_BACKEND_QUEUE_MAP = {
-    "cpu": env("JULIA_QUEUE_CPU", default="julia-cpu"),
-    "gpu": env("JULIA_QUEUE_GPU", default="julia-gpu"),
-    "metal": env("JULIA_QUEUE_METAL", default="julia-metal"),
-    "cuda": env("JULIA_QUEUE_CUDA", default="julia-cuda"),
-}
+
+def _first_catalog_endpoint(compute_system: str, fallback: str = "") -> str:
+    for queue in QUEUE_CATALOG.get("queues", []):
+        if queue.get("enabled") and queue.get("compute_system") == compute_system:
+            endpoint = str(queue.get("endpoint_url") or "").strip()
+            if endpoint:
+                return endpoint
+    return fallback
 
 
 def _parse_queue_endpoint_pairs(raw_pairs: list[str]) -> dict[str, str]:
@@ -480,39 +489,52 @@ def _parse_queue_endpoint_pairs(raw_pairs: list[str]) -> dict[str, str]:
     return mapping
 
 
-# Optional queue-scoped overrides, for example:
-# JULIA_QUEUE_ENDPOINTS="julia-gpu-remote1=http://192.168.1.50:2999"
-JULIA_QUEUE_ENDPOINTS = _parse_queue_endpoint_pairs(
-    env.list("JULIA_QUEUE_ENDPOINTS", default=[])
+def _queue_names_for_compute(compute_system: str) -> list[str]:
+    names: list[str] = []
+    for queue in QUEUE_CATALOG.get("queues", []):
+        if queue.get("enabled") and queue.get("compute_system") == compute_system:
+            names.append(str(queue["name"]))
+    return names
+
+
+# Julia tortuosity service routing
+JULIA_SERVER_HOST = env("JULIA_SERVER_HOST", default="127.0.0.1")
+JULIA_SERVER_PORT = env("JULIA_SERVER_PORT", default="2999")
+_JULIA_FALLBACK_URL = f"http://{JULIA_SERVER_HOST}:{JULIA_SERVER_PORT}"
+JULIA_DEFAULT_SERVER_URL = env(
+    "JULIA_DEFAULT_SERVER_URL",
+    default=_first_catalog_endpoint("julia", fallback=_JULIA_FALLBACK_URL),
 )
 
-# Ensure standard Julia queues resolve even when no explicit override is set.
-for _queue_name in JULIA_BACKEND_QUEUE_MAP.values():
+JULIA_BACKEND_QUEUE_MAP = build_backend_queue_map(QUEUE_CATALOG, "julia")
+if not JULIA_BACKEND_QUEUE_MAP:
+    raise ImproperlyConfigured("Queue catalog must define at least one enabled Julia queue.")
+
+JULIA_QUEUE_ENDPOINTS = build_queue_endpoint_map(QUEUE_CATALOG, "julia")
+JULIA_QUEUE_ENDPOINTS.update(_parse_queue_endpoint_pairs(env.list("JULIA_QUEUE_ENDPOINTS", default=[])))
+
+for _queue_name in _queue_names_for_compute("julia"):
     JULIA_QUEUE_ENDPOINTS.setdefault(_queue_name, JULIA_DEFAULT_SERVER_URL)
 
 # Taichi permeability service routing
 # Empty default keeps existing local in-process Taichi execution.
-TAICHI_DEFAULT_SERVER_URL = env("TAICHI_DEFAULT_SERVER_URL", default="")
-
-# Backend-to-queue mapping used by permeability launch form choices.
-TAICHI_BACKEND_QUEUE_MAP = {
-    "cpu": env("TAICHI_QUEUE_CPU", default="kabs-cpu"),
-    "gpu": env("TAICHI_QUEUE_GPU", default="kabs-gpu"),
-    "metal": env("TAICHI_QUEUE_METAL", default="kabs-metal"),
-    "cuda": env("TAICHI_QUEUE_CUDA", default="kabs-cuda"),
-    "opengl": env("TAICHI_QUEUE_OPENGL", default="kabs-opengl"),
-}
-
-# Optional queue-scoped overrides, for example:
-# TAICHI_QUEUE_ENDPOINTS="kabs-gpu-remote1=http://192.168.1.51:3000"
-TAICHI_QUEUE_ENDPOINTS = _parse_queue_endpoint_pairs(
-    env.list("TAICHI_QUEUE_ENDPOINTS", default=[])
+TAICHI_DEFAULT_SERVER_URL = env(
+    "TAICHI_DEFAULT_SERVER_URL",
+    default=_first_catalog_endpoint("taichi", fallback=""),
 )
 
-# Respect an optional default endpoint for any queue without an explicit override.
+TAICHI_BACKEND_QUEUE_MAP = build_backend_queue_map(QUEUE_CATALOG, "taichi")
+if not TAICHI_BACKEND_QUEUE_MAP:
+    raise ImproperlyConfigured("Queue catalog must define at least one enabled Taichi queue.")
+
+TAICHI_QUEUE_ENDPOINTS = build_queue_endpoint_map(QUEUE_CATALOG, "taichi")
+TAICHI_QUEUE_ENDPOINTS.update(_parse_queue_endpoint_pairs(env.list("TAICHI_QUEUE_ENDPOINTS", default=[])))
+
 if TAICHI_DEFAULT_SERVER_URL:
-    for _queue_name in TAICHI_BACKEND_QUEUE_MAP.values():
+    for _queue_name in _queue_names_for_compute("taichi"):
         TAICHI_QUEUE_ENDPOINTS.setdefault(_queue_name, TAICHI_DEFAULT_SERVER_URL)
+
+ANALYSIS_DEFAULT_QUEUE_MAP = dict(QUEUE_CATALOG.get("analysis_defaults", {}))
 
 CELERY_BROKER_URL = CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"

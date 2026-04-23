@@ -44,6 +44,21 @@ def _resolve_julia_endpoint(queue_name: str) -> str:
     return str(queue_endpoints.get(queue_name, default_endpoint))
 
 
+def _resolve_endpoint_for_job(job: AnalysisJob, queue_name: str, *, compute: str) -> str:
+    """Resolve endpoint with per-job routing metadata taking precedence over settings.
+
+    This prevents failures when workers are not restarted after queue catalog changes.
+    """
+    params = job.parameters or {}
+    persisted_endpoint = str(params.get("endpoint_url") or "").strip()
+    if persisted_endpoint:
+        return persisted_endpoint
+
+    if compute == "julia":
+        return _resolve_julia_endpoint(queue_name)
+    return _resolve_taichi_endpoint(queue_name)
+
+
 @shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 1})
 def run_permeability_job(self, job_id):
     job = AnalysisJob.objects.select_related("image").get(id=job_id)
@@ -56,7 +71,7 @@ def run_permeability_job(self, job_id):
 
     try:
         queue_name = _get_task_queue_name(self.request, default_queue="kabs-cpu")
-        endpoint_url = _resolve_taichi_endpoint(queue_name)
+        endpoint_url = _resolve_endpoint_for_job(job, queue_name, compute="taichi")
 
         if endpoint_url:
             from taichi_client import _server_healthy as _taichi_server_healthy
@@ -140,7 +155,7 @@ def run_diffusivity_job(self, job_id):
 
     try:
         queue_name = _get_task_queue_name(self.request, default_queue="julia-cpu")
-        endpoint_url = _resolve_julia_endpoint(queue_name)
+        endpoint_url = _resolve_endpoint_for_job(job, queue_name, compute="julia")
 
         # Verify the Julia service is reachable before loading the array.
         from julia_client import _server_healthy

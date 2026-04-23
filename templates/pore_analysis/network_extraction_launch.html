@@ -19,7 +19,7 @@
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
     {% include "pore_analysis/components/form_field.html" with field=form.method %}
-    {% include "pore_analysis/components/form_field.html" with field=form.backend %}
+    {% include "pore_analysis/components/form_field.html" with field=form.queue_name %}
   </div>
 
   <div id="snow2-fields" class="space-y-4">
@@ -83,7 +83,7 @@
 <script>
   (function () {
     const methodSelect = document.getElementById('id_method');
-    const backendSelect = document.getElementById('id_backend');
+    const queueSelect = document.getElementById('id_queue_name');
     const throatAreaCheckbox = document.getElementById('id_throat_area');
 
     const snow2Fields = document.getElementById('snow2-fields');
@@ -106,8 +106,14 @@
     }
 
     function updateBackendVisibility() {
-      const backend = backendSelect ? backendSelect.value : 'cpu';
-      setVisibility(parallelFields, backend === 'parallel');
+      if (!queueSelect) {
+        setVisibility(parallelFields, false);
+        return;
+      }
+
+      const rawParallelQueues = queueSelect.dataset.parallelQueues || '';
+      const parallelQueues = new Set(rawParallelQueues.split(',').map((item) => item.trim()).filter(Boolean));
+      setVisibility(parallelFields, parallelQueues.has(queueSelect.value));
     }
 
     function updateThroatAreaVisibility() {
@@ -119,8 +125,8 @@
     if (methodSelect) {
       methodSelect.addEventListener('change', updateMethodVisibility);
     }
-    if (backendSelect) {
-      backendSelect.addEventListener('change', updateBackendVisibility);
+    if (queueSelect) {
+      queueSelect.addEventListener('change', updateBackendVisibility);
     }
     if (throatAreaCheckbox) {
       throatAreaCheckbox.addEventListener('change', updateThroatAreaVisibility);

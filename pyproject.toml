@@ -62,6 +62,7 @@ dependencies = [
     "httpx>=0.28.1",
     "juliapkg>=0.1.23",
     "kabs",
+    "PyYAML>=6.0.2",
     "numpy>=2.4.4",
     "plotly>=6.7.0",
     "porespy>=3.0.4",

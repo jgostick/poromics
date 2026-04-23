@@ -2,6 +2,31 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from .models import AnalysisJob, AnalysisType, JobStatus, UploadedImage
+from .queue_catalog import (
+    get_default_queue_for_analysis,
+    get_parallel_queues_for_analysis,
+    get_queue_backend,
+    get_queue_choices_for_analysis,
+    queue_supports_analysis,
+)
+
+
+def _set_queue_field_choices(form: forms.Form, *, field_name: str, analysis_type: str) -> None:
+    queue_choices = get_queue_choices_for_analysis(analysis_type)
+    form.fields[field_name].choices = queue_choices
+    if queue_choices:
+        form.fields[field_name].initial = get_default_queue_for_analysis(analysis_type)
+
+
+def _derive_backend_for_queue(
+    *, form: forms.Form, queue_name: str | None, analysis_type: str, field_name: str = "queue_name"
+) -> str | None:
+    if not queue_name:
+        return None
+    if not queue_supports_analysis(queue_name, analysis_type):
+        form.add_error(field_name, _("Selected queue is not available for this analysis."))
+        return None
+    return get_queue_backend(queue_name)
 
 
 class PermeabilityLaunchForm(forms.Form):
@@ -9,14 +34,6 @@ class PermeabilityLaunchForm(forms.Form):
         ("x", _("X direction")),
         ("y", _("Y direction")),
         ("z", _("Z direction")),
-    ]
-
-    BACKEND_CHOICES = [
-        ("cpu", _("CPU")),
-        ("gpu", _("GPU")),
-        ("metal", _("Metal")),
-        ("cuda", _("CUDA")),
-        ("opengl", _("OpenGL")),
     ]
 
     image = forms.ModelChoiceField(
@@ -42,10 +59,9 @@ class PermeabilityLaunchForm(forms.Form):
         initial=1e-3,
         widget=forms.NumberInput(attrs={"class": "input input-bordered w-full", "step": "any"}),
     )
-    backend = forms.ChoiceField(
-        choices=BACKEND_CHOICES,
-        label=_("Backend"),
-        initial="cpu",
+    queue_name = forms.ChoiceField(
+        choices=(),
+        label=_("Queue"),
         widget=forms.Select(attrs={"class": "select select-bordered w-full"}),
     )
 
@@ -53,39 +69,44 @@ class PermeabilityLaunchForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.team = team
         self.fields["image"].queryset = UploadedImage.objects.filter(team=team).order_by("-created_at")
+        _set_queue_field_choices(self, field_name="queue_name", analysis_type=AnalysisType.PERMEABILITY)
 
     def clean(self):
         cleaned = super().clean()
         image = cleaned.get("image")
         direction = cleaned.get("direction")
+        queue_name = cleaned.get("queue_name")
+        backend = _derive_backend_for_queue(
+            form=self,
+            queue_name=queue_name,
+            analysis_type=AnalysisType.PERMEABILITY,
+        )
 
         # Guard against selecting z-direction for 2D data
         if image and direction == "z" and len(image.dimensions) < 3:
             self.add_error("direction", _("Z direction requires a 3D image."))
 
+        if backend:
+            cleaned["backend"] = backend
+
         return cleaned
 
     def to_parameters(self):
+        queue_name = self.cleaned_data["queue_name"]
         return {
             "direction": self.cleaned_data["direction"],
             "max_iterations": self.cleaned_data["max_iterations"],
             "tolerance": self.cleaned_data["tolerance"],
-            "backend": self.cleaned_data["backend"],
+            "queue_name": queue_name,
+            "backend": self.cleaned_data.get("backend") or get_queue_backend(queue_name),
         }
-    
+
 
 class DiffusivityLaunchForm(forms.Form):
     DIRECTION_CHOICES = [
         ("x", _("X direction")),
         ("y", _("Y direction")),
         ("z", _("Z direction")),
-    ]
-
-    BACKEND_CHOICES = [
-        ("cpu", _("CPU")),
-        ("gpu", _("GPU")),
-        ("metal", _("Metal")),
-        ("cuda", _("CUDA")),
     ]
 
     image = forms.ModelChoiceField(
@@ -105,10 +126,9 @@ class DiffusivityLaunchForm(forms.Form):
         initial=1e-5,
         widget=forms.NumberInput(attrs={"class": "input input-bordered w-full", "step": "any"}),
     )
-    backend = forms.ChoiceField(
-        choices=BACKEND_CHOICES,
-        label=_("Backend"),
-        initial="cpu",
+    queue_name = forms.ChoiceField(
+        choices=(),
+        label=_("Queue"),
         widget=forms.Select(attrs={"class": "select select-bordered w-full"}),
     )
 
@@ -116,28 +136,35 @@ class DiffusivityLaunchForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.team = team
         self.fields["image"].queryset = UploadedImage.objects.filter(team=team).order_by("-created_at")
+        _set_queue_field_choices(self, field_name="queue_name", analysis_type=AnalysisType.DIFFUSIVITY)
 
     def clean(self):
         cleaned = super().clean()
         image = cleaned.get("image")
         direction = cleaned.get("direction")
+        queue_name = cleaned.get("queue_name")
+        backend = _derive_backend_for_queue(
+            form=self,
+            queue_name=queue_name,
+            analysis_type=AnalysisType.DIFFUSIVITY,
+        )
         if image and direction == "z" and len(image.dimensions) < 3:
             self.add_error("direction", _("Z direction requires a 3D image."))
+        if backend:
+            cleaned["backend"] = backend
         return cleaned
 
     def to_parameters(self):
+        queue_name = self.cleaned_data["queue_name"]
         return {
             "direction": self.cleaned_data["direction"],
             "tolerance": self.cleaned_data["tolerance"],
-            "backend": self.cleaned_data["backend"],
+            "queue_name": queue_name,
+            "backend": self.cleaned_data.get("backend") or get_queue_backend(queue_name),
         }
 
 
 class PoreSizeLaunchForm(forms.Form):
-    BACKEND_CHOICES = [
-        ("cpu", _("CPU")),
-    ]
-
     image = forms.ModelChoiceField(
         queryset=UploadedImage.objects.none(),
         label=_("Image"),
@@ -150,21 +177,35 @@ class PoreSizeLaunchForm(forms.Form):
         initial=25,
         widget=forms.NumberInput(attrs={"class": "input input-bordered w-full"}),
     )
-    backend = forms.ChoiceField(
-        choices=BACKEND_CHOICES,
-        label=_("Backend"),
-        initial="cpu",
+    queue_name = forms.ChoiceField(
+        choices=(),
+        label=_("Queue"),
         widget=forms.Select(attrs={"class": "select select-bordered w-full"}),
     )
 
     def __init__(self, team, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["image"].queryset = UploadedImage.objects.filter(team=team).order_by("-created_at")
+        _set_queue_field_choices(self, field_name="queue_name", analysis_type=AnalysisType.PORESIZE)
+
+    def clean(self):
+        cleaned = super().clean()
+        queue_name = cleaned.get("queue_name")
+        backend = _derive_backend_for_queue(
+            form=self,
+            queue_name=queue_name,
+            analysis_type=AnalysisType.PORESIZE,
+        )
+        if backend:
+            cleaned["backend"] = backend
+        return cleaned
 
     def to_parameters(self):
+        queue_name = self.cleaned_data["queue_name"]
         return {
             "sizes": self.cleaned_data["sizes"],
-            "backend": self.cleaned_data["backend"],
+            "queue_name": queue_name,
+            "backend": self.cleaned_data.get("backend") or get_queue_backend(queue_name),
         }
 
 
@@ -175,6 +216,7 @@ class TrimImageForm(forms.Form):
     ymax = forms.IntegerField(widget=forms.HiddenInput())
     zmin = forms.IntegerField(widget=forms.HiddenInput())
     zmax = forms.IntegerField(widget=forms.HiddenInput())
+
 
 class ImagePickerForm(forms.Form):
     image = forms.ModelChoiceField(
@@ -193,11 +235,6 @@ class NetworkExtractionLaunchForm(forms.Form):
     METHOD_CHOICES = [
         ("snow2", _("SNOW2")),
         ("magnet", _("MAGNET")),
-    ]
-
-    BACKEND_CHOICES = [
-        ("cpu", _("CPU (serial)")),
-        ("parallel", _("Parallel (Dask)")),
     ]
 
     SNOW2_ACCURACY_CHOICES = [
@@ -223,10 +260,9 @@ class NetworkExtractionLaunchForm(forms.Form):
         initial="snow2",
         widget=forms.Select(attrs={"class": "select select-bordered w-full"}),
     )
-    backend = forms.ChoiceField(
-        choices=BACKEND_CHOICES,
-        label=_("Backend"),
-        initial="cpu",
+    queue_name = forms.ChoiceField(
+        choices=(),
+        label=_("Queue"),
         widget=forms.Select(attrs={"class": "select select-bordered w-full"}),
     )
 
@@ -330,6 +366,9 @@ class NetworkExtractionLaunchForm(forms.Form):
     def __init__(self, team, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["image"].queryset = UploadedImage.objects.filter(team=team).order_by("-created_at")
+        _set_queue_field_choices(self, field_name="queue_name", analysis_type=AnalysisType.NETWORK_EXTRACTION)
+        parallel_queues = sorted(get_parallel_queues_for_analysis(AnalysisType.NETWORK_EXTRACTION))
+        self.fields["queue_name"].widget.attrs["data-parallel-queues"] = ",".join(parallel_queues)
 
     def _parse_divs(self, raw_divs: str):
         if not raw_divs:
@@ -348,8 +387,15 @@ class NetworkExtractionLaunchForm(forms.Form):
     def clean(self):
         cleaned = super().clean()
         method = cleaned.get("method")
-        backend = cleaned.get("backend")
+        queue_name = cleaned.get("queue_name")
         image = cleaned.get("image")
+        backend = _derive_backend_for_queue(
+            form=self,
+            queue_name=queue_name,
+            analysis_type=AnalysisType.NETWORK_EXTRACTION,
+        )
+        if backend:
+            cleaned["backend"] = backend
 
         # Parallel settings are required only for parallel backend
         if backend == "parallel":
@@ -380,9 +426,11 @@ class NetworkExtractionLaunchForm(forms.Form):
 
     def to_parameters(self):
         method = self.cleaned_data["method"]
-        backend = self.cleaned_data["backend"]
+        queue_name = self.cleaned_data["queue_name"]
+        backend = self.cleaned_data.get("backend") or get_queue_backend(queue_name)
         params = {
             "method": method,
+            "queue_name": queue_name,
             "backend": backend,
         }
 
@@ -445,13 +493,15 @@ class NetworkValidationLaunchForm(forms.Form):
         queryset=UploadedImage.objects.none(),
         label=_("Image"),
         empty_label=_("Select an image"),
-        widget=forms.Select(attrs={
-            "class": "select select-bordered w-full",
-            "hx-get": "",  # set dynamically in template
-            "hx-target": "#network-job-options",
-            "hx-trigger": "change",
-            "hx-include": "this",
-        }),
+        widget=forms.Select(
+            attrs={
+                "class": "select select-bordered w-full",
+                "hx-get": "",  # set dynamically in template
+                "hx-target": "#network-job-options",
+                "hx-trigger": "change",
+                "hx-include": "this",
+            }
+        ),
     )
     network_job = forms.ModelChoiceField(
         queryset=AnalysisJob.objects.none(),
@@ -462,6 +512,11 @@ class NetworkValidationLaunchForm(forms.Form):
     direction = forms.ChoiceField(
         choices=DIRECTION_CHOICES,
         label=_("Flow direction"),
+        widget=forms.Select(attrs={"class": "select select-bordered w-full"}),
+    )
+    queue_name = forms.ChoiceField(
+        choices=(),
+        label=_("Queue"),
         widget=forms.Select(attrs={"class": "select select-bordered w-full"}),
     )
     pore_diameter_key = forms.CharField(
@@ -485,19 +540,24 @@ class NetworkValidationLaunchForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.team = team
         self.fields["image"].queryset = UploadedImage.objects.filter(team=team).order_by("-created_at")
+        _set_queue_field_choices(self, field_name="queue_name", analysis_type=AnalysisType.NETWORK_VALIDATION)
 
         # Pre-populate network_job based on submitted image (handles POST validation)
         image_id = self.data.get("image") if self.data else None
         if image_id:
-            self.fields["network_job"].queryset = AnalysisJob.objects.filter(
-                team=team,
-                image_id=image_id,
-                analysis_type=AnalysisType.NETWORK_EXTRACTION,
-                status=JobStatus.COMPLETED,
-                result__network_file__isnull=False,
-            ).exclude(
-                result__network_file="",
-            ).order_by("-created_at")
+            self.fields["network_job"].queryset = (
+                AnalysisJob.objects.filter(
+                    team=team,
+                    image_id=image_id,
+                    analysis_type=AnalysisType.NETWORK_EXTRACTION,
+                    status=JobStatus.COMPLETED,
+                    result__network_file__isnull=False,
+                )
+                .exclude(
+                    result__network_file="",
+                )
+                .order_by("-created_at")
+            )
         else:
             self.fields["network_job"].queryset = AnalysisJob.objects.none()
 
@@ -505,14 +565,25 @@ class NetworkValidationLaunchForm(forms.Form):
         cleaned = super().clean()
         image = cleaned.get("image")
         direction = cleaned.get("direction")
+        queue_name = cleaned.get("queue_name")
+        backend = _derive_backend_for_queue(
+            form=self,
+            queue_name=queue_name,
+            analysis_type=AnalysisType.NETWORK_VALIDATION,
+        )
         if image and direction == "z" and len(image.dimensions) < 3:
             self.add_error("direction", _("Z direction requires a 3D image."))
+        if backend:
+            cleaned["backend"] = backend
         return cleaned
 
     def to_parameters(self):
+        queue_name = self.cleaned_data["queue_name"]
         return {
             "network_job_id": str(self.cleaned_data["network_job"].id),
             "direction": self.cleaned_data["direction"],
+            "queue_name": queue_name,
+            "backend": self.cleaned_data.get("backend") or get_queue_backend(queue_name),
             "pore_diameter_key": self.cleaned_data["pore_diameter_key"].strip(),
             "throat_diameter_key": self.cleaned_data["throat_diameter_key"].strip(),
             "shape_model": self.cleaned_data["shape_model"],

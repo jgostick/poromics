@@ -1,11 +1,9 @@
 import json
 import pickle
 import uuid
-from decimal import Decimal
 
 import numpy as np
 from django.contrib.auth import get_user_model
-from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -22,33 +20,35 @@ User = get_user_model()
 
 class UploadedImage(BaseTeamModel):
     """Represents a volumetric image uploaded by a user for analysis."""
-    
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200, help_text="User-provided name for the image")
     description = models.TextField(blank=True, help_text="Optional description of the image")
-    file = models.FileField(upload_to='uploaded_images/', help_text="The .npy file containing the boolean array")
-    thumbnail = models.ImageField(upload_to='image_thumbnails/', null=True, blank=True, help_text="Generated thumbnail image")
+    file = models.FileField(upload_to="uploaded_images/", help_text="The .npy file containing the boolean array")
+    thumbnail = models.ImageField(
+        upload_to="image_thumbnails/", null=True, blank=True, help_text="Generated thumbnail image"
+    )
     file_size = models.PositiveIntegerField(help_text="File size in bytes")
-    uploaded_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='uploaded_images')
-    
+    uploaded_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name="uploaded_images")
+
     # Image metadata
     dimensions = models.JSONField(help_text="Array shape as [x, y, z]")
     voxel_size = models.FloatField(null=True, blank=True, help_text="Voxel size in micrometers")
     metrics = models.JSONField(default=dict, blank=True, help_text="Image metrics")
-    
+
     class Meta:
-        ordering = ['-created_at']
-        verbose_name = 'Uploaded Image'
-        verbose_name_plural = 'Uploaded Images'
-        
+        ordering = ["-created_at"]
+        verbose_name = "Uploaded Image"
+        verbose_name_plural = "Uploaded Images"
+
     def __str__(self):
         return f"{self.name} ({self.uploaded_by.email})"
-    
+
     @property
     def file_size_mb(self):
         """Return file size in MB for display."""
         return round(self.file_size / (1024 * 1024), 2)
-    
+
     @property
     def total_voxels(self):
         """Calculate total number of voxels in the image."""
@@ -58,28 +58,29 @@ class UploadedImage(BaseTeamModel):
                 total *= dim
             return total
         return 0
-    
+
     def generate_thumbnail(self, save=True):
         """Generate a thumbnail using porespy visualization."""
         import logging
+
         logger = logging.getLogger(__name__)
-        
+
         if not ps:
             error_msg = "Porespy not available for thumbnail generation"
             logger.error(error_msg)
             print(error_msg)
             return None
-            
+
         try:
             logger.info(f"Starting thumbnail generation for {self.name}")
-            
+
             # Load the numpy array
             logger.info(f"Loading array from {self.file.path}")
-            with self.file.open('rb') as f:
+            with self.file.open("rb") as f:
                 image_array = np.load(f)
-            
+
             logger.info(f"Array loaded with shape: {image_array.shape}, dtype: {image_array.dtype}")
-            
+
             # Generate X-ray view using porespy
             if len(image_array.shape) == 3:
                 logger.info("Generating xray view for 3D array")
@@ -94,28 +95,29 @@ class UploadedImage(BaseTeamModel):
                 logger.error(error_msg)
                 print(error_msg)
                 return None
-            
+
             logger.info(f"Xray image generated with shape: {xray_img.shape}")
-            
+
             # Set matplotlib backend before importing pyplot
             import matplotlib
-            matplotlib.use('Agg')
+
+            matplotlib.use("Agg")
             from io import BytesIO
 
             import matplotlib.pyplot as plt
             from django.core.files.base import ContentFile
             from matplotlib.backends.backend_agg import FigureCanvasAgg
-            
+
             # Clear any existing figures
             plt.clf()
-            
+
             # Create matplotlib figure
             logger.info("Creating matplotlib figure")
             fig, ax = plt.subplots(figsize=(4, 4), dpi=100)
-            ax.imshow(xray_img, cmap='turbo')
-            ax.axis('off')
+            ax.imshow(xray_img, cmap="turbo")
+            ax.axis("off")
             plt.tight_layout(pad=0)
-            
+
             # Save to BytesIO buffer
             logger.info("Saving figure to buffer")
             buffer = BytesIO()
@@ -123,22 +125,18 @@ class UploadedImage(BaseTeamModel):
             canvas.print_png(buffer)
             buffer.seek(0)
             plt.close(fig)
-            
+
             logger.info(f"Buffer created with {len(buffer.getvalue())} bytes")
-            
+
             if save:
                 # Save thumbnail to model
                 thumbnail_name = f"{self.id}_thumbnail.png"
                 logger.info(f"Saving thumbnail as {thumbnail_name}")
-                self.thumbnail.save(
-                    thumbnail_name,
-                    ContentFile(buffer.getvalue()),
-                    save=False
-                )
+                self.thumbnail.save(thumbnail_name, ContentFile(buffer.getvalue()), save=False)
                 logger.info("Thumbnail saved successfully")
-            
+
             return buffer.getvalue()
-            
+
         except ImportError as e:
             error_msg = f"Import error generating thumbnail for {self.name}: {e}"
             logger.error(error_msg)
@@ -154,24 +152,27 @@ class UploadedImage(BaseTeamModel):
             logger.error(error_msg, exc_info=True)  # This will include the full traceback
             print(error_msg)
             import traceback
+
             traceback.print_exc()  # Print full traceback to console
             return None
-        
+
     def compute_metrics(self, save=True):
         """Load image array and compute all metrics, store in model."""
         try:
-            with self.file.open('rb') as f:
+            with self.file.open("rb") as f:
                 image_array = np.load(f, allow_pickle=False)
-            
+
             from .analysis.metrics import get_image_metrics
+
             self.metrics = get_image_metrics(image_array)
-            
+
             if save:
-                self.save(update_fields=['metrics'])
-            
+                self.save(update_fields=["metrics"])
+
             return self.metrics
         except Exception as e:
             import logging
+
             logger = logging.getLogger(__name__)
             logger.error(f"Failed to compute metrics for {self.name}: {e}")
             return {}
@@ -179,44 +180,46 @@ class UploadedImage(BaseTeamModel):
 
 class AnalysisType(models.TextChoices):
     """Available types of pore analysis."""
-    NETWORK_EXTRACTION = 'network_extraction', _('Pore Network Extraction')
-    NETWORK_VALIDATION = 'network_validation', _('Network Validation')
-    PERMEABILITY = 'permeability', _('Permeability Calculation')
-    DIFFUSIVITY = 'diffusivity', _('Diffusivity Calculation')
-    MORPHOLOGY = 'morphology', _('Morphological Analysis')
-    VISUALIZATION = 'visualization', _('3D Visualization')
-    PORESIZE = 'poresize', _('Pore Size Distribution')
-    FULL_SUITE = 'full_suite', _('Complete Analysis Suite')
+
+    NETWORK_EXTRACTION = "network_extraction", _("Pore Network Extraction")
+    NETWORK_VALIDATION = "network_validation", _("Network Validation")
+    PERMEABILITY = "permeability", _("Permeability Calculation")
+    DIFFUSIVITY = "diffusivity", _("Diffusivity Calculation")
+    MORPHOLOGY = "morphology", _("Morphological Analysis")
+    VISUALIZATION = "visualization", _("3D Visualization")
+    PORESIZE = "poresize", _("Pore Size Distribution")
+    FULL_SUITE = "full_suite", _("Complete Analysis Suite")
 
 
 class JobStatus(models.TextChoices):
     """Status of an analysis job."""
-    PENDING = 'pending', _('Pending')
-    PROCESSING = 'processing', _('Processing')
-    COMPLETED = 'completed', _('Completed')
-    FAILED = 'failed', _('Failed')
-    CANCELLED = 'cancelled', _('Cancelled')
+
+    PENDING = "pending", _("Pending")
+    PROCESSING = "processing", _("Processing")
+    COMPLETED = "completed", _("Completed")
+    FAILED = "failed", _("Failed")
+    CANCELLED = "cancelled", _("Cancelled")
 
 
 class AnalysisJob(BaseTeamModel):
     """Represents an analysis job running on an uploaded image."""
-    
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    image = models.ForeignKey(UploadedImage, on_delete=models.CASCADE, related_name='analysis_jobs')
+    image = models.ForeignKey(UploadedImage, on_delete=models.CASCADE, related_name="analysis_jobs")
     analysis_type = models.CharField(max_length=50, choices=AnalysisType.choices)
     status = models.CharField(max_length=20, choices=JobStatus.choices, default=JobStatus.PENDING)
-    
+
     # Job metadata
-    started_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='started_jobs')
+    started_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name="started_jobs")
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
-    
+
     # Processing details
     parameters = models.JSONField(default=dict, blank=True, help_text="Submitted analysis parameters")
     celery_task_id = models.CharField(max_length=100, null=True, blank=True, help_text="Celery task ID")
     progress_percentage = models.PositiveSmallIntegerField(default=0, help_text="Job completion percentage")
     error_message = models.TextField(blank=True, help_text="Error details if job failed")
-    
+
     # Cost tracking
     estimated_cost = models.DecimalField(max_digits=8, decimal_places=2, help_text="Estimated credits for this job")
     actual_cost = models.DecimalField(
@@ -226,15 +229,15 @@ class AnalysisJob(BaseTeamModel):
         blank=True,
         help_text="Actual credits charged",
     )
-    
+
     class Meta:
-        ordering = ['-created_at']
-        verbose_name = 'Analysis Job'
-        verbose_name_plural = 'Analysis Jobs'
-        
+        ordering = ["-created_at"]
+        verbose_name = "Analysis Job"
+        verbose_name_plural = "Analysis Jobs"
+
     def __str__(self):
         return f"{self.get_analysis_type_display()} - {self.image.name} ({self.get_status_display()})"
-    
+
     @property
     def duration(self):
         """Return job duration if completed."""
@@ -243,55 +246,29 @@ class AnalysisJob(BaseTeamModel):
         return None
 
 
-class AnalysisPricingRate(BaseModel):
-    """Pricing rates expressed in credits per million voxels."""
-
-    analysis_type = models.CharField(max_length=50, choices=AnalysisType.choices)
-    backend = models.CharField(
-        max_length=20,
-        default="default",
-        help_text="Compute backend key (e.g. cpu, gpu, default)",
-    )
-    credits_per_million_voxels = models.DecimalField(
-        max_digits=10,
-        decimal_places=4,
-        validators=[MinValueValidator(Decimal("0"))],
-        help_text="Credits charged per one million voxels",
-    )
-    is_active = models.BooleanField(default=True)
-
-    class Meta:
-        ordering = ["analysis_type", "backend"]
-        constraints = [
-            models.UniqueConstraint(fields=["analysis_type", "backend"], name="unique_analysis_pricing_rate"),
-        ]
-        verbose_name = "Analysis Pricing Rate"
-        verbose_name_plural = "Analysis Pricing Rates"
-
-    def __str__(self):
-        return f"{self.analysis_type}:{self.backend} -> {self.credits_per_million_voxels} credits/M voxels"
-
-
 class AnalysisResult(BaseModel):
     """Stores results from completed analyses."""
-    
-    job = models.OneToOneField(AnalysisJob, on_delete=models.CASCADE, related_name='result')
-    
+
+    job = models.OneToOneField(AnalysisJob, on_delete=models.CASCADE, related_name="result")
+
     # Result files
-    network_file = models.FileField(upload_to='analysis_results/', null=True, blank=True, 
-                                   help_text="Extracted pore network file")
-    visualization_file = models.FileField(upload_to='analysis_results/', null=True, blank=True,
-                                         help_text="3D visualization file")
-    report_file = models.FileField(upload_to='analysis_results/', null=True, blank=True,
-                                  help_text="Analysis report PDF")
-    
+    network_file = models.FileField(
+        upload_to="analysis_results/", null=True, blank=True, help_text="Extracted pore network file"
+    )
+    visualization_file = models.FileField(
+        upload_to="analysis_results/", null=True, blank=True, help_text="3D visualization file"
+    )
+    report_file = models.FileField(
+        upload_to="analysis_results/", null=True, blank=True, help_text="Analysis report PDF"
+    )
+
     # Computed metrics
     metrics = models.JSONField(default=dict, help_text="Analysis metrics and properties")
-    
+
     class Meta:
-        verbose_name = 'Analysis Result'
-        verbose_name_plural = 'Analysis Results'
-        
+        verbose_name = "Analysis Result"
+        verbose_name_plural = "Analysis Results"
+
     def __str__(self):
         return f"Results for {self.job}"
 
@@ -352,35 +329,38 @@ class AnalysisResult(BaseModel):
 
 class CreditTransaction(BaseTeamModel):
     """Tracks credit purchases and usage for billing."""
-    
+
     TRANSACTION_TYPES = [
-        ('purchase', _('Credit Purchase')),
-        ('usage', _('Analysis Usage')),
-        ('refund', _('Refund')),
+        ("purchase", _("Credit Purchase")),
+        ("usage", _("Analysis Usage")),
+        ("refund", _("Refund")),
     ]
-    
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='credit_transactions')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="credit_transactions")
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
     amount = models.DecimalField(
         max_digits=8,
         decimal_places=2,
         help_text="Credit amount (positive=credit, negative=debit)",
     )
-    
+
     # Related objects
-    analysis_job = models.ForeignKey(AnalysisJob, on_delete=models.SET_NULL, null=True, blank=True,
-                                   related_name='credit_transactions')
-    
+    analysis_job = models.ForeignKey(
+        AnalysisJob, on_delete=models.SET_NULL, null=True, blank=True, related_name="credit_transactions"
+    )
+
     # Transaction metadata
     description = models.CharField(max_length=200, help_text="Description of the transaction")
-    stripe_charge_id = models.CharField(max_length=100, null=True, blank=True, help_text="Stripe charge ID for purchases")
-    
+    stripe_charge_id = models.CharField(
+        max_length=100, null=True, blank=True, help_text="Stripe charge ID for purchases"
+    )
+
     class Meta:
-        ordering = ['-created_at']
-        verbose_name = 'Credit Transaction'
-        verbose_name_plural = 'Credit Transactions'
-        
+        ordering = ["-created_at"]
+        verbose_name = "Credit Transaction"
+        verbose_name_plural = "Credit Transactions"
+
     def __str__(self):
-        symbol = '+' if self.amount >= 0 else ''
+        symbol = "+" if self.amount >= 0 else ""
         return f"{symbol}{self.amount} credits - {self.description} ({self.user.email})"

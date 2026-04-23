@@ -63,7 +63,7 @@
 <script>
   (function () {
     const imageSelect = document.getElementById('id_image');
-    const backendSelect = document.getElementById('id_backend');
+    const queueSelect = document.getElementById('id_queue_name');
     const panel = document.getElementById('credit-estimate-panel');
     const badge = document.getElementById('credit-estimate-badge');
     const balanceValue = document.getElementById('credit-balance-value');
@@ -104,8 +104,8 @@
         analysis_type: analysisType,
         image: imageSelect.value,
       });
-      if (backendSelect && backendSelect.value) {
-        params.set('backend', backendSelect.value);
+      if (queueSelect && queueSelect.value) {
+        params.set('queue_name', queueSelect.value);
       }
 
       panel.classList.remove('hidden');
@@ -144,8 +144,8 @@
     if (imageSelect) {
       imageSelect.addEventListener('change', updateEstimate);
     }
-    if (backendSelect) {
-      backendSelect.addEventListener('change', updateEstimate);
+    if (queueSelect) {
+      queueSelect.addEventListener('change', updateEstimate);
     }
 
     updateEstimate();

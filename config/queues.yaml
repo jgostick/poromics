@@ -1,0 +1,166 @@
+version: 1
+
+analysis_defaults:
+  permeability: kabs-cpu
+  diffusivity: julia-cpu
+  poresize: basic-cpu
+  network_extraction: network-cpu
+  network_validation: network-validation
+
+queues:
+  - name: kabs-cpu
+    display_name: kabs-cpu
+    backend_key: cpu
+    compute_system: taichi
+    analyses:
+      - permeability
+    endpoint_url: ""
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "1.0000"
+
+  - name: kabs-gpu
+    display_name: kabs-gpu
+    backend_key: gpu
+    compute_system: taichi
+    analyses:
+      - permeability
+    endpoint_url: ""
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "2.0000"
+
+  - name: kabs-metal
+    display_name: kabs-metal
+    backend_key: metal
+    compute_system: taichi
+    analyses:
+      - permeability
+    endpoint_url: ""
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "2.0000"
+
+  - name: kabs-cuda
+    display_name: kabs-cuda
+    backend_key: cuda
+    compute_system: taichi
+    analyses:
+      - permeability
+    endpoint_url: ""
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "2.0000"
+
+  - name: kabs-opengl
+    display_name: kabs-opengl
+    backend_key: opengl
+    compute_system: taichi
+    analyses:
+      - permeability
+    endpoint_url: ""
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "2.0000"
+
+  - name: julia-cpu
+    display_name: julia-cpu
+    backend_key: cpu
+    compute_system: julia
+    analyses:
+      - diffusivity
+    endpoint_url: http://129.97.161.145:2999
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "1.2500"
+
+  - name: julia-gpu
+    display_name: julia-gpu
+    backend_key: gpu
+    compute_system: julia
+    analyses:
+      - diffusivity
+    endpoint_url: http://129.97.161.145:2999
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "2.5000"
+
+  - name: julia-metal
+    display_name: julia-metal
+    backend_key: metal
+    compute_system: julia
+    analyses:
+      - diffusivity
+    endpoint_url: http://129.97.161.145:2999
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "2.5000"
+
+  - name: julia-cuda
+    display_name: julia-cuda
+    backend_key: cuda
+    compute_system: julia
+    analyses:
+      - diffusivity
+    endpoint_url: http://129.97.161.145:2999
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "2.5000"
+
+  - name: basic-cpu
+    display_name: basic-cpu
+    backend_key: default
+    compute_system: cpu
+    analyses:
+      - poresize
+    endpoint_url: ""
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "1.0000"
+
+  - name: network-cpu
+    display_name: network-cpu
+    backend_key: cpu
+    compute_system: network
+    analyses:
+      - network_extraction
+    endpoint_url: ""
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "2.0000"
+
+  - name: network-parallel
+    display_name: network-parallel
+    backend_key: parallel
+    compute_system: network
+    analyses:
+      - network_extraction
+    endpoint_url: ""
+    enabled: true
+    capabilities:
+      - parallel
+    pricing:
+      default_credits_per_million_voxels: "3.0000"
+
+  - name: network-validation
+    display_name: network-validation
+    backend_key: default
+    compute_system: network
+    analyses:
+      - network_validation
+    endpoint_url: ""
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "1.5000"

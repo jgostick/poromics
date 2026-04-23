@@ -2,22 +2,36 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from django.db.models import Sum
 
-from apps.pore_analysis.models import AnalysisPricingRate, CreditTransaction
+from apps.pore_analysis.models import CreditTransaction
+from apps.pore_analysis.queue_catalog import (
+    QueueCatalogError,
+    QueuePricingNotConfiguredError,
+    get_default_queue_for_analysis,
+    get_queue_pricing_rate,
+)
 
 MILLION = Decimal("1000000")
 TWO_PLACES = Decimal("0.01")
 
 
 class NoPricingRateError(Exception):
-    """Raised when no active pricing rate is configured for an analysis/backend."""
+    """Raised when no pricing rate is configured for an analysis/queue."""
 
 
 class InsufficientCreditsError(Exception):
     """Raised when a team does not have enough credits for a job."""
 
 
-def _normalize_backend(backend: str | None) -> str:
-    return (backend or "default").lower()
+def _resolve_queue_name(analysis_type: str, parameters: dict | None) -> str:
+    params = parameters or {}
+    queue_name = str(params.get("queue_name") or "").strip()
+    if queue_name:
+        return queue_name
+
+    try:
+        return get_default_queue_for_analysis(analysis_type)
+    except QueueCatalogError as exc:
+        raise NoPricingRateError(f"No default queue configured for analysis_type='{analysis_type}'.") from exc
 
 
 def get_team_credit_balance(team) -> Decimal:
@@ -25,54 +39,27 @@ def get_team_credit_balance(team) -> Decimal:
     return balance if balance is not None else Decimal("0.00")
 
 
-def get_pricing_rate(analysis_type: str, backend: str | None) -> AnalysisPricingRate:
-    normalized_backend = _normalize_backend(backend)
-
-    rate = (
-        AnalysisPricingRate.objects.filter(
-            analysis_type=analysis_type,
-            backend=normalized_backend,
-            is_active=True,
-        )
-        .order_by("-updated_at")
-        .first()
-    )
-    if rate:
-        return rate
-
-    fallback = (
-        AnalysisPricingRate.objects.filter(
-            analysis_type=analysis_type,
-            backend="default",
-            is_active=True,
-        )
-        .order_by("-updated_at")
-        .first()
-    )
-    if fallback:
-        return fallback
-
-    raise NoPricingRateError(
-        f"No active pricing rate configured for analysis_type='{analysis_type}', backend='{normalized_backend}'."
-    )
+def get_pricing_rate(analysis_type: str, queue_name: str) -> Decimal:
+    try:
+        return get_queue_pricing_rate(queue_name=queue_name, analysis_type=analysis_type)
+    except (QueueCatalogError, QueuePricingNotConfiguredError) as exc:
+        raise NoPricingRateError(
+            f"No active pricing rate configured for analysis_type='{analysis_type}', queue='{queue_name}'."
+        ) from exc
 
 
 def calculate_estimated_credits(image, analysis_type: str, parameters: dict | None = None) -> Decimal:
-    params = parameters or {}
-    backend = params.get("backend", "default")
-
-    rate = get_pricing_rate(analysis_type=analysis_type, backend=backend)
+    queue_name = _resolve_queue_name(analysis_type=analysis_type, parameters=parameters)
+    rate = get_pricing_rate(analysis_type=analysis_type, queue_name=queue_name)
     voxels = Decimal(str(image.total_voxels))
-    raw_cost = (voxels / MILLION) * rate.credits_per_million_voxels
+    raw_cost = (voxels / MILLION) * rate
     return raw_cost.quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
 
 
 def ensure_sufficient_credits(team, required_credits: Decimal) -> None:
     available = get_team_credit_balance(team)
     if available < required_credits:
-        raise InsufficientCreditsError(
-            f"Insufficient credits. Required {required_credits}, available {available}."
-        )
+        raise InsufficientCreditsError(f"Insufficient credits. Required {required_credits}, available {available}.")
 
 
 def charge_job_upfront(job) -> CreditTransaction:
