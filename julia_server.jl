@@ -81,6 +81,32 @@ const JOB_QUEUE = Channel{String}(256)
 const JOB_STORE = Dict{String, JobRecord}()
 const JOB_LOCK  = ReentrantLock()
 
+function release_job_inputs!(rec::JobRecord)
+    rec.img = Array{Bool}(undef, 0, 0, 0)
+    rec.D = nothing
+    return nothing
+end
+
+function release_job_buffers!(rec::JobRecord)
+    release_job_inputs!(rec)
+    rec.conc = Array{Float32, 3}(undef, 0, 0, 0)
+    return nothing
+end
+
+function maybe_reclaim_memory!(use_gpu::Bool)
+    # Keep long-running workers from accumulating unreachable allocations.
+    GC.gc(false)
+    if use_gpu && CUDA_AVAILABLE
+        try
+            CUDA.synchronize()
+            CUDA.reclaim()
+        catch e
+            @warn "CUDA memory reclaim failed" exception=e
+        end
+    end
+    return nothing
+end
+
 function new_job!(img::Array{Bool}, D::Union{Nothing, Array{Float32}}, axis, reltol, gpu)
     id  = string(uuid4())
     rec = JobRecord(PENDING, img, D, axis, reltol, gpu,
@@ -108,10 +134,9 @@ function worker(gpu_id::Int)
             rec.status = RUNNING
         end
 
+        use_gpu = rec.gpu && gpu_id >= 0 && CUDA_AVAILABLE
         try
             img  = rec.img
-            use_gpu = rec.gpu && gpu_id >= 0 && CUDA_AVAILABLE
-
             D = rec.D
             if use_gpu
                 CUDA.device!(gpu_id)
@@ -134,8 +159,7 @@ function worker(gpu_id::Int)
             lock(JOB_LOCK) do
                 rec.tau    = tau
                 rec.conc   = c
-                rec.img    = Array{Bool}(undef, 0, 0, 0)  # release input memory
-                rec.D      = nothing
+                release_job_inputs!(rec)
                 rec.status = DONE
             end
             @info "Job done" job_id tau gpu=use_gpu
@@ -144,11 +168,12 @@ function worker(gpu_id::Int)
             msg = sprint(showerror, e, catch_backtrace())
             @error "Job failed" job_id exception=e
             lock(JOB_LOCK) do
-                rec.img    = Array{Bool}(undef, 0, 0, 0)  # release input memory
-                rec.D      = nothing
+                release_job_inputs!(rec)
                 rec.err    = msg
                 rec.status = ERROR_STATE
             end
+        finally
+            maybe_reclaim_memory!(use_gpu)
         end
     end
 end
@@ -240,9 +265,14 @@ end)
 HTTP.register!(ROUTER, "GET", "/job/{id}/conc", function(req)
     job_id = HTTP.getparams(req)["id"]
     rec = lock(JOB_LOCK) do
-        get(JOB_STORE, job_id, nothing)
+        candidate = get(JOB_STORE, job_id, nothing)
+        if candidate !== nothing && candidate.status == DONE
+            delete!(JOB_STORE, job_id)
+            return candidate
+        end
+        nothing
     end
-    if rec === nothing || rec.status != DONE
+    if rec === nothing
         return json_response(404, """{"error": "not ready"}""")
     end
     # Write .npz to temp file, send bytes, clean up
@@ -252,6 +282,8 @@ HTTP.register!(ROUTER, "GET", "/job/{id}/conc", function(req)
         data = read(tmp)
         HTTP.Response(200, ["Content-Type" => "application/octet-stream"], body=data)
     finally
+        release_job_buffers!(rec)
+        maybe_reclaim_memory!(rec.gpu)
         isfile(tmp) && rm(tmp)
     end
 end)
@@ -259,9 +291,16 @@ end)
 # DELETE /job/:id — cancel / clean up
 HTTP.register!(ROUTER, "DELETE", "/job/{id}", function(req)
     job_id = HTTP.getparams(req)["id"]
+    use_gpu = false
     lock(JOB_LOCK) do
-        delete!(JOB_STORE, job_id)
+        rec = get(JOB_STORE, job_id, nothing)
+        if rec !== nothing
+            use_gpu = rec.gpu
+            release_job_buffers!(rec)
+            delete!(JOB_STORE, job_id)
+        end
     end
+    maybe_reclaim_memory!(use_gpu)
     HTTP.Response(204)
 end)
 
@@ -287,6 +326,7 @@ function warmup()
         solve(sim.prob, KrylovJL_CG(), reltol=1f-2, verbose=false)
         @info "GPU warmup complete"
     end
+    maybe_reclaim_memory!(CUDA_AVAILABLE)
 end
 
 # Spawn one worker task per GPU (or one CPU worker if no GPU available).
