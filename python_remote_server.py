@@ -7,13 +7,14 @@ and exposes polling endpoints. Analyses are selected by an analysis_type key.
 from __future__ import annotations
 
 import base64
+import importlib
 import io
 import json
 import logging
 import os
 import threading
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -34,6 +35,10 @@ JOB_STORE: dict[str, JobRecord] = {}
 JOB_LOCK = threading.Lock()
 MAX_WORKERS = int(os.environ.get("PYTHON_REMOTE_SERVER_WORKERS", "2"))
 EXECUTOR = ThreadPoolExecutor(max_workers=MAX_WORKERS)
+HANDLER_LOCK = threading.Lock()
+
+ANALYSIS_HANDLERS: dict[str, Callable[[dict], dict]] = {}
+HANDLER_SOURCES: dict[str, str] = {}
 
 
 def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict) -> None:
@@ -61,15 +66,136 @@ def _decode_array(encoded_npy: str) -> np.ndarray:
     return np.load(io.BytesIO(raw), allow_pickle=False)
 
 
-def _handle_poresize(payload: dict) -> dict:
-    from apps.pore_analysis.analysis.pore_size_distribution import compute_poresize_solution
+def register_handler(
+    analysis_type: str,
+    handler: Callable[[dict], dict],
+    *,
+    source: str,
+) -> None:
+    normalized = str(analysis_type).strip()
+    if not normalized:
+        raise ValueError("analysis_type must be a non-empty string")
+    if not callable(handler):
+        raise ValueError(f"Handler for analysis_type '{normalized}' is not callable")
 
+    with HANDLER_LOCK:
+        if normalized in ANALYSIS_HANDLERS:
+            raise ValueError(f"Handler already registered for analysis_type '{normalized}'")
+        ANALYSIS_HANDLERS[normalized] = handler
+        HANDLER_SOURCES[normalized] = source
+
+
+def register_handlers(handlers: Mapping[str, Callable[[dict], dict]], *, source: str) -> list[str]:
+    registered: list[str] = []
+    for analysis_type, handler in handlers.items():
+        register_handler(str(analysis_type), handler, source=source)
+        registered.append(str(analysis_type).strip())
+    return registered
+
+
+def list_registered_handlers() -> list[dict[str, str]]:
+    with HANDLER_LOCK:
+        names = sorted(ANALYSIS_HANDLERS)
+        return [
+            {
+                "analysis_type": name,
+                "source": HANDLER_SOURCES.get(name, "unknown"),
+            }
+            for name in names
+        ]
+
+
+def _env_bool(name: str, *, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _configured_handler_modules() -> list[str]:
+    raw = os.environ.get("PYTHON_REMOTE_HANDLER_MODULES", "")
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def load_handler_modules(*, module_names: list[str] | None = None, strict: bool | None = None) -> dict[str, object]:
+    names = module_names if module_names is not None else _configured_handler_modules()
+    strict_mode = _env_bool("PYTHON_REMOTE_HANDLER_STRICT", default=False) if strict is None else strict
+
+    registered: list[str] = []
+    loaded_modules: list[str] = []
+    errors: list[str] = []
+
+    for module_name in names:
+        try:
+            module = importlib.import_module(module_name)
+            loader = getattr(module, "get_handlers", None)
+            if not callable(loader):
+                raise ValueError(f"Module '{module_name}' must define callable get_handlers()")
+
+            handlers = loader()
+            if not isinstance(handlers, Mapping):
+                raise ValueError(f"Module '{module_name}' get_handlers() must return a mapping")
+
+            newly_registered = register_handlers(handlers, source=f"plugin:{module_name}")
+            loaded_modules.append(module_name)
+            registered.extend(newly_registered)
+            log.info("Loaded handler module %s (%d handlers)", module_name, len(newly_registered))
+        except Exception as exc:
+            message = f"Failed loading handler module '{module_name}': {exc}"
+            errors.append(message)
+            if strict_mode:
+                raise RuntimeError(message) from exc
+            log.warning(message)
+
+    return {
+        "loaded_modules": loaded_modules,
+        "registered_analysis_types": registered,
+        "errors": errors,
+        "strict": strict_mode,
+    }
+
+
+def _compute_poresize_solution(*, image_array: np.ndarray, sizes: int = 25, voxel_size: float = 1.0) -> dict:
+    """Compute pore-size distribution without importing Django app modules.
+
+    This keeps the remote worker standalone so it can run on machines that do
+    not have the full Poromics Django package layout.
+    """
+    try:
+        import porespy as ps
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Missing required package 'porespy' on remote server. "
+            "Install dependencies before starting python_remote_server.py."
+        ) from exc
+
+    lt = ps.filters.local_thickness(
+        im=image_array,
+        method="dt",
+        sizes=sizes,
+        smooth=False,
+    )
+    counts, bin_edges = np.histogram(lt[image_array] * voxel_size, bins=sizes, density=True)
+    return {
+        "counts": counts.tolist(),
+        "bin_edges": bin_edges.tolist(),
+        "sizes": int(sizes),
+        "voxel_size": float(voxel_size),
+    }
+
+
+def _handle_poresize(payload: dict) -> dict:
     image_npy_b64 = str(payload["image_npy_b64"])
     image_array = _decode_array(image_npy_b64).astype(bool)
     sizes = int(payload.get("sizes", 25))
     voxel_size = float(payload.get("voxel_size", 1.0))
 
-    solution = compute_poresize_solution(
+    solution = _compute_poresize_solution(
         image_array=image_array,
         sizes=sizes,
         voxel_size=voxel_size,
@@ -77,9 +203,11 @@ def _handle_poresize(payload: dict) -> dict:
     return {"solution": solution}
 
 
-ANALYSIS_HANDLERS: dict[str, Callable[[dict], dict]] = {
-    "poresize": _handle_poresize,
-}
+def _register_builtin_handlers() -> None:
+    register_handler("poresize", _handle_poresize, source="builtin:python_remote_server")
+
+
+_register_builtin_handlers()
 
 
 def _run_job(job_id: str, analysis_type: str, payload: dict) -> None:
@@ -90,7 +218,8 @@ def _run_job(job_id: str, analysis_type: str, payload: dict) -> None:
         rec.status = "running"
 
     try:
-        handler = ANALYSIS_HANDLERS.get(analysis_type)
+        with HANDLER_LOCK:
+            handler = ANALYSIS_HANDLERS.get(analysis_type)
         if handler is None:
             raise ValueError(f"Unsupported analysis_type: {analysis_type}")
 
@@ -120,6 +249,16 @@ class PythonRemoteServerHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/health":
             return _json_response(self, 200, {"status": "ok", "workers": MAX_WORKERS})
+
+        if self.path == "/handlers":
+            return _json_response(
+                self,
+                200,
+                {
+                    "status": "ok",
+                    "handlers": list_registered_handlers(),
+                },
+            )
 
         if self.path.startswith("/job/"):
             job_id = self.path.split("/", 2)[2]
@@ -173,6 +312,15 @@ def main() -> None:
     logging.basicConfig(
         level=os.environ.get("PYTHON_REMOTE_SERVER_LOG_LEVEL", "INFO"),
         format="[%(asctime)s] %(levelname)s %(name)s %(message)s",
+    )
+
+    summary = load_handler_modules()
+    log.info(
+        "Handler registry initialized (builtin + plugins): loaded_modules=%d registered=%d errors=%d strict=%s",
+        len(summary["loaded_modules"]),
+        len(summary["registered_analysis_types"]),
+        len(summary["errors"]),
+        summary["strict"],
     )
 
     host = os.environ.get("PYTHON_REMOTE_SERVER_HOST", "127.0.0.1")

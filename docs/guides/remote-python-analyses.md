@@ -18,6 +18,7 @@ This guide explains how to:
 The generic server supports:
 
 - GET /health
+- GET /handlers
 - POST /job
 - GET /job/<job_id>
 - DELETE /job/<job_id>
@@ -37,6 +38,10 @@ For pore-size, payload currently includes:
 
 ## 1) Install dependencies
 
+Two supported modes are available.
+
+### Mode A: Full repo checkout on remote host
+
 From repository root:
 
 ```bash
@@ -49,6 +54,23 @@ If you are using an existing virtual environment:
 source .venv/bin/activate
 uv sync
 ```
+
+### Mode B: Standalone server file on remote host
+
+If the remote machine only has python_remote_server.py (no Django project code),
+install the minimal runtime packages:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install numpy porespy
+```
+
+Notes:
+
+- The server is now standalone and does not import apps.* modules.
+- If porespy is missing, job execution returns an explicit package error.
 
 ## 2) Start the remote server
 
@@ -65,7 +87,7 @@ export PYTHON_REMOTE_SERVER_HOST=0.0.0.0
 export PYTHON_REMOTE_SERVER_PORT=3100
 export PYTHON_REMOTE_SERVER_WORKERS=2
 export PYTHON_REMOTE_SERVER_LOG_LEVEL=INFO
-uv run python python_remote_server.py
+python python_remote_server.py
 ```
 
 ## 3) Verify health from local Django machine
@@ -88,7 +110,19 @@ The queue entry for pore-size remote is scaffolded in config/queues.yaml as:
 - compute_system: cpu
 - analyses: [poresize]
 - endpoint_url: http://129.97.161.145:3100
-- enabled: false (opt-in by default)
+- enabled: true
+
+## Plugin loader environment variables
+
+- PYTHON_REMOTE_HANDLER_MODULES: comma-separated plugin module list loaded at startup
+- PYTHON_REMOTE_HANDLER_STRICT: when true, server startup fails if any plugin cannot be loaded
+
+Example:
+
+```bash
+export PYTHON_REMOTE_HANDLER_MODULES=my_remote_plugins.network,my_remote_plugins.morphology
+export PYTHON_REMOTE_HANDLER_STRICT=true
+```
 
 ## 1) Enable/update queue in config/queues.yaml
 
@@ -170,18 +204,55 @@ def run_new_analysis(*, image_array, param_a, endpoint_url: str | None = None) -
 
 ## 3) Register handler in python_remote_server.py
 
-Add a handler function and register it in ANALYSIS_HANDLERS with a stable analysis_type key.
+Use plugin modules so new analyses can be added without editing python_remote_server.py.
+
+Each plugin module must expose:
+
+- get_handlers() -> dict[str, callable]
+
+Each mapping entry is:
+
+- key: analysis_type string
+- value: handler(payload: dict) -> dict
 
 Pattern:
 
 ```python
 def _handle_new_analysis(payload: dict) -> dict:
+    # decode payload and compute
     ...
     return {"solution": solution}
 
-ANALYSIS_HANDLERS = {
-    ...,
-    "new_analysis": _handle_new_analysis,
+
+def get_handlers() -> dict[str, callable]:
+    return {
+        "new_analysis": _handle_new_analysis,
+    }
+```
+
+Then configure the server with your module path:
+
+```bash
+export PYTHON_REMOTE_HANDLER_MODULES=my_remote_plugins.new_analysis_plugin
+export PYTHON_REMOTE_HANDLER_STRICT=true
+python python_remote_server.py
+```
+
+You can verify loaded handlers via:
+
+```bash
+curl http://<REMOTE_HOST>:3100/handlers
+```
+
+Expected shape:
+
+```json
+{
+  "status": "ok",
+  "handlers": [
+    {"analysis_type": "poresize", "source": "builtin:python_remote_server"},
+    {"analysis_type": "new_analysis", "source": "plugin:my_remote_plugins.new_analysis_plugin"}
+  ]
 }
 ```
 
@@ -242,7 +313,9 @@ Remote server:
 export PYTHON_REMOTE_SERVER_HOST=0.0.0.0
 export PYTHON_REMOTE_SERVER_PORT=3100
 export PYTHON_REMOTE_SERVER_WORKERS=2
-uv run python python_remote_server.py
+export PYTHON_REMOTE_HANDLER_MODULES=
+export PYTHON_REMOTE_HANDLER_STRICT=false
+python python_remote_server.py
 ```
 
 Local Celery worker for pore-size remote queue:

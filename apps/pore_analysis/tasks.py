@@ -103,7 +103,7 @@ def run_permeability_job(self, job_id):
             max_iterations=job.parameters["max_iterations"],
             tolerance=job.parameters["tolerance"],
             backend=job.parameters["backend"],
-            voxel_size=job.image.voxel_size,
+            voxel_size=float(job.image.voxel_size or 1.0),
             endpoint_url=endpoint_url or None,
         )
 

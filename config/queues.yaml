@@ -9,7 +9,7 @@ analysis_defaults:
 
 # To start a queue, use a variation of the following:
 # TAICHI_BACKEND=metal uv run celery -A poromics worker -Q taichi-metal -n taichi-metal@%h --pool=solo -l INFO
-# And be add the corresponding block below..
+# And add the corresponding block below...
 
 queues:
   - name: kabs-cpu
@@ -151,7 +151,7 @@ queues:
     analyses:
       - poresize
     endpoint_url: http://129.97.161.145:3100
-    enabled: false
+    enabled: true
     capabilities: []
     pricing:
       default_credits_per_million_voxels: "1.2500"
