@@ -5,7 +5,7 @@ services:
     buildCommand: "./deploy/build.sh"
     startCommand: "gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 0 poromics.asgi:application -k uvicorn.workers.UvicornWorker"
     region: oregon
-    plan: free
+    plan: standard
     numInstances: 1
     envVars:
       - key: PYTHON_VERSION
