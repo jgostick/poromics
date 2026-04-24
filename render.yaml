@@ -53,59 +53,59 @@ services:
       - key: SENTRY_DSN
         sync: false
 # Celery task worker and scheduler (not available on 'free' plan)
-#  - type: worker
-#    name: poromics_celery
-#    env: python
-#    buildCommand: "./deploy/build_celery.sh"
-#    startCommand: celery -A poromics worker -l INFO --pool threads --concurrency 20
-#    region: oregon
-#    plan: starter
-#    numInstances: 1
-#    envVars:
-#      - key: PYTHON_VERSION
-#        value: 3.12.8
-#      - key: NODE_VERSION
-#        value: 22.12.0
-#      - key: DEBUG
-#        value: false
-#      - key: DJANGO_SETTINGS_MODULE
-#        value: poromics.settings_production
-#      - key: DJANGO_DATABASE_NAME
-#        fromDatabase:
-#          name: poromics
-#          property: database
-#      - key: DJANGO_DATABASE_USER
-#        fromDatabase:
-#          name: poromics
-#          property: user
-#      - key: DJANGO_DATABASE_PASSWORD
-#        fromDatabase:
-#          name: poromics
-#          property: password
-#      - key: DJANGO_DATABASE_HOST
-#        fromDatabase:
-#          name: poromics
-#          property: host
-#      - key: DJANGO_DATABASE_PORT
-#        fromDatabase:
-#          name: poromics
-#          property: port
-#      - key: REDIS_HOST
-#        fromService:
-#          type: redis
-#          name: poromics-redis
-#          property: host
-#      - key: REDIS_PORT
-#        fromService:
-#          type: redis
-#          name: poromics-redis
-#          property: port
-#      - key: SECRET_KEY
-#        sync: false
-#      - key: GOOGLE_ANALYTICS_ID
-#        sync: false
-#      - key: SENTRY_DSN
-#        sync: false
+  - type: worker
+    name: poromics_celery
+    env: python
+    buildCommand: "./deploy/build_celery.sh"
+    startCommand: celery -A poromics worker -l INFO --pool threads --concurrency 2
+    region: oregon
+    plan: starter
+    numInstances: 1
+    envVars:
+    - key: PYTHON_VERSION
+      value: 3.12.8
+    - key: NODE_VERSION
+      value: 22.12.0
+    - key: DEBUG
+      value: false
+    - key: DJANGO_SETTINGS_MODULE
+      value: poromics.settings_production
+    - key: DJANGO_DATABASE_NAME
+      fromDatabase:
+        name: poromics
+        property: database
+    - key: DJANGO_DATABASE_USER
+      fromDatabase:
+        name: poromics
+        property: user
+    - key: DJANGO_DATABASE_PASSWORD
+      fromDatabase:
+        name: poromics
+        property: password
+    - key: DJANGO_DATABASE_HOST
+      fromDatabase:
+        name: poromics
+        property: host
+    - key: DJANGO_DATABASE_PORT
+      fromDatabase:
+        name: poromics
+        property: port
+    - key: REDIS_HOST
+      fromService:
+        type: redis
+        name: poromics-redis
+        property: host
+    - key: REDIS_PORT
+      fromService:
+        type: redis
+        name: poromics-redis
+        property: port
+    - key: SECRET_KEY
+      sync: false
+    - key: GOOGLE_ANALYTICS_ID
+      sync: false
+    - key: SENTRY_DSN
+      sync: false
 #  - type: worker
 #    name: poromics_celery_beat
 #    env: python
