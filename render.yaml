@@ -57,7 +57,7 @@ services:
     name: poromics_celery
     env: python
     buildCommand: "./deploy/build_celery.sh"
-    startCommand: celery -A poromics worker -l INFO --pool threads --concurrency 2
+    startCommand: "bash ./deploy/start_celery_worker.sh"
     region: oregon
     plan: starter
     numInstances: 1
