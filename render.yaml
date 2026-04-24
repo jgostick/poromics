@@ -69,7 +69,7 @@ services:
     buildCommand: "./deploy/build_celery.sh"
     startCommand: "bash ./deploy/start_celery_worker.sh"
     region: oregon
-    plan: starter
+    plan: standard
     numInstances: 1
     envVars:
     - key: PYTHON_VERSION
