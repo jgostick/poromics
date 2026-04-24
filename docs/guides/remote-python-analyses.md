@@ -34,6 +34,41 @@ For pore-size, payload currently includes:
 - sizes
 - voxel_size
 
+## RunPod First Deployment (Pore Size)
+
+Use this when you want the existing `poresize-remote` queue to execute on a RunPod endpoint.
+
+## 1) Provision a RunPod endpoint
+
+- Create a serverless endpoint (or pod + HTTP proxy) that exposes:
+    - `GET /health`
+    - `POST /job`
+    - `GET /job/<job_id>`
+    - `DELETE /job/<job_id>`
+- Deploy `python_remote_server.py` in that environment.
+- Ensure required Python packages are installed (`numpy`, `porespy`).
+
+## 2) Set queue endpoint override in Render
+
+Set the same env var on both web and celery services:
+
+- `PYTHON_REMOTE_QUEUE_ENDPOINTS=poresize-remote=https://<RUNPOD_HOST>`
+
+Optional default for all `compute_system=cpu` queues:
+
+- `PYTHON_REMOTE_DEFAULT_SERVER_URL=https://<RUNPOD_HOST>`
+
+Notes:
+
+- Queue-specific overrides (`PYTHON_REMOTE_QUEUE_ENDPOINTS`) take precedence.
+- Use the full HTTPS base URL with no trailing slash.
+
+## 3) Deploy and smoke test
+
+1. Redeploy web and celery.
+2. Verify queue endpoint from app logs by launching a pore-size job on `poresize-remote`.
+3. Confirm RunPod `/health` responds and jobs progress to completed.
+
 ## Remote Server Setup (Remote Machine)
 
 ## 1) Install dependencies
@@ -131,6 +166,8 @@ Update the queue block for your environment:
 - Set enabled: true
 - Set endpoint_url to your remote server URL
 - Keep analyses including poresize
+
+If you are using environment overrides in Render, queue YAML can keep a placeholder/default endpoint.
 
 Optional: make it the default queue for pore-size by changing analysis_defaults.poresize.
 

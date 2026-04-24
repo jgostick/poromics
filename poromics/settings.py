@@ -534,6 +534,20 @@ if TAICHI_DEFAULT_SERVER_URL:
     for _queue_name in _queue_names_for_compute("taichi"):
         TAICHI_QUEUE_ENDPOINTS.setdefault(_queue_name, TAICHI_DEFAULT_SERVER_URL)
 
+# Generic Python remote analysis service routing (for compute_system=cpu queues).
+PYTHON_REMOTE_DEFAULT_SERVER_URL = env(
+    "PYTHON_REMOTE_DEFAULT_SERVER_URL",
+    default=_first_catalog_endpoint("cpu", fallback=""),
+)
+PYTHON_REMOTE_QUEUE_ENDPOINTS = build_queue_endpoint_map(QUEUE_CATALOG, "cpu")
+PYTHON_REMOTE_QUEUE_ENDPOINTS.update(
+    _parse_queue_endpoint_pairs(env.list("PYTHON_REMOTE_QUEUE_ENDPOINTS", default=[]))
+)
+
+if PYTHON_REMOTE_DEFAULT_SERVER_URL:
+    for _queue_name in _queue_names_for_compute("cpu"):
+        PYTHON_REMOTE_QUEUE_ENDPOINTS.setdefault(_queue_name, PYTHON_REMOTE_DEFAULT_SERVER_URL)
+
 ANALYSIS_DEFAULT_QUEUE_MAP = dict(QUEUE_CATALOG.get("analysis_defaults", {}))
 
 CELERY_BROKER_URL = CELERY_RESULT_BACKEND = REDIS_URL

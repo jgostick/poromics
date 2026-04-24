@@ -56,6 +56,10 @@ services:
         sync: false
       - key: AWS_DEFAULT_REGION
         sync: false
+      - key: PYTHON_REMOTE_QUEUE_ENDPOINTS
+        sync: false
+      - key: PYTHON_REMOTE_DEFAULT_SERVER_URL
+        sync: false
       - key: SECRET_KEY
         sync: false
       - key: GOOGLE_ANALYTICS_ID
@@ -119,6 +123,10 @@ services:
     - key: AWS_STORAGE_BUCKET_NAME
       sync: false
     - key: AWS_DEFAULT_REGION
+      sync: false
+    - key: PYTHON_REMOTE_QUEUE_ENDPOINTS
+      sync: false
+    - key: PYTHON_REMOTE_DEFAULT_SERVER_URL
       sync: false
     - key: SECRET_KEY
       sync: false

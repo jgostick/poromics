@@ -156,6 +156,18 @@ queues:
     pricing:
       default_credits_per_million_voxels: "1.2500"
 
+  - name: poresize-runpod
+    display_name: poresize-runpod
+    backend_key: remote
+    compute_system: cpu
+    analyses:
+      - poresize
+    endpoint_url: 
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "0.2500"
+
   - name: network-cpu
     display_name: network-cpu
     backend_key: cpu

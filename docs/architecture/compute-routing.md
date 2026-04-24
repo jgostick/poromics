@@ -31,6 +31,16 @@ Configured in `poromics/settings.py`:
 
 If `TAICHI_DEFAULT_SERVER_URL` is set, queues without explicit overrides inherit it.
 
+### Generic Python remote (pore-size and future CPU remote analyses)
+
+Configured in `poromics/settings.py`:
+
+- `PYTHON_REMOTE_DEFAULT_SERVER_URL`: optional default endpoint for `compute_system=cpu` queues
+- `PYTHON_REMOTE_QUEUE_ENDPOINTS`: optional per-queue endpoint overrides (`QUEUE=URL` pairs)
+
+This supports routing queues such as `poresize-remote` to external services (for example RunPod)
+without changing queue names.
+
 ## Task Resolution Flow
 
 In `apps/pore_analysis/tasks.py`:

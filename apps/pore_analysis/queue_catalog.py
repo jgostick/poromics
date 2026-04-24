@@ -279,6 +279,24 @@ def get_queue_backend(queue_name: str) -> str:
 def get_queue_endpoint(queue_name: str, *, default: str = "") -> str:
     queue = get_queue_config(queue_name)
     endpoint = str(queue.get("endpoint_url") or "").strip()
+    compute_system = str(queue.get("compute_system") or "").strip()
+
+    try:
+        from django.conf import settings
+
+        override_maps = {
+            "julia": getattr(settings, "JULIA_QUEUE_ENDPOINTS", {}),
+            "taichi": getattr(settings, "TAICHI_QUEUE_ENDPOINTS", {}),
+            "cpu": getattr(settings, "PYTHON_REMOTE_QUEUE_ENDPOINTS", {}),
+        }
+        override_map = override_maps.get(compute_system) or {}
+        override_endpoint = str(override_map.get(queue_name) or "").strip()
+        if override_endpoint:
+            return override_endpoint
+    except Exception:
+        # During early startup, settings may not be ready; fall back to catalog/default.
+        pass
+
     return endpoint or default
 
 

@@ -7,6 +7,11 @@ export DJANGO_SETTINGS_MODULE=poromics.settings_production
 echo "Installing python dependencies"
 curl -LsSf https://astral.sh/uv/install.sh | sh
 source $HOME/.local/bin/env
-uv sync --frozen --no-group dev --group prod
+
+# Pin interpreter for dependency resolution so builds don't float to newer
+# Python versions that may lack binary wheels for native deps (for example taichi).
+UV_PYTHON_VERSION="${PYTHON_VERSION:-3.12.8}"
+uv python install "${UV_PYTHON_VERSION}"
+uv sync --frozen --no-group dev --group prod --python "${UV_PYTHON_VERSION}"
 # update the path to use the right python/gunicorn, etc. from the local env
 export PATH="${PWD}/.venv/bin:$PATH"
