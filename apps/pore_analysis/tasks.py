@@ -29,6 +29,12 @@ def _format_job_error_message(exc: Exception) -> str:
             "or disable USE_S3_MEDIA for this environment."
         )
 
+    if isinstance(exc, FileNotFoundError) and "uploaded_images/" in message:
+        return (
+            "Uploaded image file was not found in storage. "
+            "Verify USE_S3_MEDIA and AWS_STORAGE_BUCKET_NAME are the same on web and worker services."
+        )
+
     return f"{exc.__class__.__name__}: {message}"
 
 

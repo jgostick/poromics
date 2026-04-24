@@ -55,6 +55,11 @@ if [[ "${USE_S3_MEDIA:-false}" == "true" ]]; then
         echo "WARNING: USE_S3_MEDIA=true but AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY are not fully set." >&2
         echo "WARNING: If this worker reads uploaded media from S3, jobs may fail with credential errors." >&2
     fi
+
+    if [[ -z "${AWS_STORAGE_BUCKET_NAME:-}" ]]; then
+        echo "WARNING: USE_S3_MEDIA=true but AWS_STORAGE_BUCKET_NAME is not set for this worker." >&2
+        echo "WARNING: Django will fall back to default bucket name; if it differs from web, jobs will fail with missing-file errors." >&2
+    fi
 fi
 
 if [[ "${CELERY_QUEUE_LIST_ONLY:-0}" == "1" ]]; then
