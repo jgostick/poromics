@@ -10,7 +10,9 @@ This guide explains how to:
 
 - Generic remote server: python_remote_server.py
 - Generic remote client: python_remote_client.py
-- Current first analysis on this path: pore-size (analysis_type = "poresize")
+- Current analyses on this path:
+    - pore-size (analysis_type = "poresize")
+    - network extraction (analysis_type = "network_extraction")
 - Queue catalog source of truth: config/queues.yaml
 
 ## Runtime Contract
@@ -52,7 +54,7 @@ Use this when you want the existing `poresize-remote` queue to execute on a RunP
 
 Set the same env var on both web and celery services:
 
-- `PYTHON_REMOTE_QUEUE_ENDPOINTS=poresize-remote=https://<RUNPOD_HOST>`
+- `PYTHON_REMOTE_QUEUE_ENDPOINTS=poresize-remote=https://<RUNPOD_HOST>,extraction-runpod=https://<RUNPOD_HOST>`
 
 Optional default for all `compute_system=cpu` queues:
 
@@ -66,7 +68,7 @@ Notes:
 ## 3) Deploy and smoke test
 
 1. Redeploy web and celery.
-2. Verify queue endpoint from app logs by launching a pore-size job on `poresize-remote`.
+2. Verify queue endpoint from app logs by launching a pore-size job on `poresize-remote` or a network extraction job on `extraction-runpod`.
 3. Confirm RunPod `/health` responds and jobs progress to completed.
 
 ## Remote Server Setup (Remote Machine)

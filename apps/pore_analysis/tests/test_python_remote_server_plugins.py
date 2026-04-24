@@ -20,6 +20,7 @@ class PythonRemoteServerPluginTests(TestCase):
         handlers = prs.list_registered_handlers()
         names = {item["analysis_type"] for item in handlers}
         self.assertIn("poresize", names)
+        self.assertIn("network_extraction", names)
 
     def test_register_handler_rejects_duplicates(self):
         prs.register_handler("unique-test-handler", lambda payload: payload, source="test")

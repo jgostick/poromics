@@ -1,8 +1,12 @@
 import pickle
+import time
 from typing import Any
 
 import numpy as np
 import porespy as ps
+
+ANALYSIS_TYPE = "network_extraction"
+POLL_INTERVAL = 5
 
 
 def _normalize_parallel_kw(params: dict[str, Any]) -> dict[str, Any] | None:
@@ -32,7 +36,23 @@ def _extract_net_dict(results: Any) -> dict[str, Any]:
     raise ValueError("Extraction output did not include a usable network dictionary.")
 
 
-def run_network_extraction(image_array: np.ndarray, params: dict[str, Any], voxel_size: float = 1.0) -> dict[str, Any]:
+def _to_json_compatible(value: Any) -> Any:
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, dict):
+        return {str(k): _to_json_compatible(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_to_json_compatible(item) for item in value]
+    return value
+
+
+def compute_network_extraction_output(
+    image_array: np.ndarray,
+    params: dict[str, Any],
+    voxel_size: float = 1.0,
+) -> dict[str, Any]:
     method = params.get("method", "snow2")
     parallel_kw = _normalize_parallel_kw(params)
 
@@ -78,6 +98,45 @@ def run_network_extraction(image_array: np.ndarray, params: dict[str, Any], voxe
         "method": method,
         "net": net,
     }
+
+
+def run_network_extraction(
+    image_array: np.ndarray,
+    params: dict[str, Any],
+    voxel_size: float = 1.0,
+    endpoint_url: str | None = None,
+) -> dict[str, Any]:
+    if endpoint_url:
+        from python_remote_client import encode_array, poll_job, submit_job
+
+        payload = {
+            "image_npy_b64": encode_array(image_array.astype(bool)),
+            "params": params,
+            "voxel_size": float(voxel_size),
+        }
+
+        job_id = submit_job(
+            analysis_type=ANALYSIS_TYPE,
+            payload=payload,
+            endpoint_url=endpoint_url,
+        )
+
+        while True:
+            result = poll_job(job_id=job_id, endpoint_url=endpoint_url)
+            if result is not None:
+                output = result.get("output") if isinstance(result, dict) else None
+                if not isinstance(output, dict):
+                    raise RuntimeError("Python remote service returned an invalid network extraction payload.")
+                return output
+            time.sleep(POLL_INTERVAL)
+
+    return _to_json_compatible(
+        compute_network_extraction_output(
+            image_array=image_array,
+            params=params,
+            voxel_size=voxel_size,
+        )
+    )
 
 
 def serialize_net_payload(payload: dict[str, Any]) -> bytes:

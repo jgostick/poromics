@@ -20,4 +20,4 @@
 - [ ] Include reachability of Celery endpoints in the Celery status page in admin dashboard
 - [ ] Add cancel and delete buttons to each job in the job list
 - [ ] Make badges on the app home page link to the page they represent (e.g. image count badge → image gallery)
-
+- [ ] Create a BaseAnalysisHandler class, with a run method. Send serialized instances of that to the remote servers, instead of updating remote_server files to handle each type of new analysis.

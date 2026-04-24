@@ -311,6 +311,19 @@ def run_network_extraction_job(self, job_id):
     job.save(update_fields=["status", "started_at", "progress_percentage", "error_message", "updated_at"])
 
     try:
+        queue_name = _get_task_queue_name(self.request, default_queue="network-cpu")
+        endpoint_url = _resolve_endpoint_for_job(job, queue_name, compute="cpu")
+
+        if endpoint_url:
+            from python_remote_client import _server_healthy as _python_server_healthy
+
+            if not _python_server_healthy(endpoint_url):
+                log.warning(
+                    "Python remote health check failed for queue '%s' at %s; proceeding with submit/poll path",
+                    queue_name,
+                    endpoint_url,
+                )
+
         with job.image.file.open("rb") as f:
             arr = np.load(f, allow_pickle=False)
 
@@ -323,6 +336,7 @@ def run_network_extraction_job(self, job_id):
             image_array=arr,
             params=job.parameters or {},
             voxel_size=float(job.image.voxel_size or 1.0),
+            endpoint_url=endpoint_url or None,
         )
         net = output["net"]
         method = output["method"]

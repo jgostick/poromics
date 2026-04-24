@@ -411,12 +411,24 @@ def network_extraction_launch(request, team_slug):
             image = form.cleaned_data["image"]
             params = form.to_parameters()
             queue = params["queue_name"]
-            job_params = _with_routing_metadata(params, queue=queue)
+            endpoint = get_queue_endpoint(queue, default="").strip()
+            job_params = _with_routing_metadata(params, queue=queue, endpoint_url=endpoint or None)
 
             ok, reason = _broker_ready(run_network_extraction_job.app)
             if not ok:
                 messages.error(request, _("Queue service unavailable. %(reason)s") % {"reason": reason})
                 return redirect("pore_analysis_team:network_extraction_launch", team_slug=team_slug)
+
+            if endpoint:
+                from python_remote_client import _server_healthy as _python_server_healthy
+
+                if not _python_server_healthy(endpoint):
+                    messages.error(
+                        request,
+                        _("Python remote service for queue '%(queue)s' is unreachable at %(endpoint)s.")
+                        % {"queue": queue, "endpoint": endpoint},
+                    )
+                    return redirect("pore_analysis_team:network_extraction_launch", team_slug=team_slug)
 
             try:
                 job = _create_job_with_upfront_charge(
@@ -438,11 +450,15 @@ def network_extraction_launch(request, team_slug):
                 task = run_network_extraction_job.apply_async(args=[str(job.id)], queue=queue)
             except Exception as exc:
                 _mark_enqueue_failure_with_refund(job, exc)
+                error_template = _("Could not queue job on '%(queue)s'. %(reason)s")
+                if endpoint:
+                    error_template = _("Could not queue job on '%(queue)s' (endpoint %(endpoint)s). %(reason)s")
                 messages.error(
                     request,
-                    _("Could not queue job on '%(queue)s'. %(reason)s")
+                    error_template
                     % {
                         "queue": queue,
+                        "endpoint": endpoint,
                         "reason": str(exc),
                     },
                 )

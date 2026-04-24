@@ -168,6 +168,18 @@ queues:
     pricing:
       default_credits_per_million_voxels: "0.2500"
 
+  - name: extraction-runpod
+    display_name: extraction-runpod
+    backend_key: remote
+    compute_system: cpu
+    analyses:
+      - network_extraction
+    endpoint_url: ""
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "0.5000"
+
   - name: network-cpu
     display_name: network-cpu
     backend_key: cpu

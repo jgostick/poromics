@@ -101,7 +101,8 @@ def _normalize_queue_entry(raw_queue: Any) -> dict[str, Any]:
         raise QueueCatalogError(f"Queue '{queue_name}' must declare a non-empty analyses list.")
     analyses = [_as_non_empty_str(item, f"queues[{queue_name}].analyses") for item in analyses_raw]
 
-    endpoint_url = str(raw_queue.get("endpoint_url", "")).strip()
+    endpoint_raw = raw_queue.get("endpoint_url", "")
+    endpoint_url = "" if endpoint_raw is None else str(endpoint_raw).strip()
     enabled = _as_bool(raw_queue.get("enabled"), f"queues[{queue_name}].enabled", default=True)
 
     capabilities_raw = raw_queue.get("capabilities", [])
