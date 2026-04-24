@@ -75,9 +75,9 @@ class UploadedImage(BaseTeamModel):
             logger.info(f"Starting thumbnail generation for {self.name}")
 
             # Load the numpy array
-            logger.info(f"Loading array from {self.file.path}")
+            logger.info("Loading array from storage key: %s", self.file.name)
             with self.file.open("rb") as f:
-                image_array = np.load(f)
+                image_array = np.load(f, allow_pickle=False)
 
             logger.info(f"Array loaded with shape: {image_array.shape}, dtype: {image_array.dtype}")
 

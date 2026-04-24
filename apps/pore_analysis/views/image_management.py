@@ -438,9 +438,11 @@ def upload_image(request, team_slug):
             
             # Generate thumbnail using porespy
             try:
-                logger.info(f"Attempting to generate thumbnail for {uploaded_image.name}")
-                logger.info(f"File path: {uploaded_image.file.path}")
-                logger.info(f"File exists: {os.path.exists(uploaded_image.file.path)}")
+                logger.info(
+                    "Attempting to generate thumbnail for %s (storage key: %s)",
+                    uploaded_image.name,
+                    uploaded_image.file.name,
+                )
                 
                 thumbnail_data = uploaded_image.generate_thumbnail()
                 if thumbnail_data:

@@ -46,6 +46,16 @@ services:
           type: redis
           name: poromics-redis
           property: port
+      - key: USE_S3_MEDIA
+        value: true
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_STORAGE_BUCKET_NAME
+        sync: false
+      - key: AWS_DEFAULT_REGION
+        sync: false
       - key: SECRET_KEY
         sync: false
       - key: GOOGLE_ANALYTICS_ID
@@ -100,6 +110,16 @@ services:
         type: redis
         name: poromics-redis
         property: port
+    - key: USE_S3_MEDIA
+      value: true
+    - key: AWS_ACCESS_KEY_ID
+      sync: false
+    - key: AWS_SECRET_ACCESS_KEY
+      sync: false
+    - key: AWS_STORAGE_BUCKET_NAME
+      sync: false
+    - key: AWS_DEFAULT_REGION
+      sync: false
     - key: SECRET_KEY
       sync: false
     - key: GOOGLE_ANALYTICS_ID
