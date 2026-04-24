@@ -10,8 +10,8 @@ source $HOME/.local/bin/env
 
 # Pin interpreter for dependency resolution so builds don't float to newer
 # Python versions that may lack binary wheels for native deps (for example taichi).
+# Render disallows interpreter downloads in this environment, so use only system Python.
 UV_PYTHON_VERSION="${PYTHON_VERSION:-3.12.8}"
-uv python install "${UV_PYTHON_VERSION}"
-uv sync --frozen --no-group dev --group prod --python "${UV_PYTHON_VERSION}"
+uv sync --frozen --no-group dev --group prod --python "${UV_PYTHON_VERSION}" --python-preference only-system
 # update the path to use the right python/gunicorn, etc. from the local env
 export PATH="${PWD}/.venv/bin:$PATH"
