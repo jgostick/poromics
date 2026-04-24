@@ -50,6 +50,13 @@ PY
 
 echo "Resolved Celery queues from ${QUEUE_CATALOG_PATH}: ${QUEUE_LIST}"
 
+if [[ "${USE_S3_MEDIA:-false}" == "true" ]]; then
+    if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
+        echo "WARNING: USE_S3_MEDIA=true but AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY are not fully set." >&2
+        echo "WARNING: If this worker reads uploaded media from S3, jobs may fail with credential errors." >&2
+    fi
+fi
+
 if [[ "${CELERY_QUEUE_LIST_ONLY:-0}" == "1" ]]; then
     exit 0
 fi

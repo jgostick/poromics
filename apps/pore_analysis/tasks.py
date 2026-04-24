@@ -17,12 +17,34 @@ from .queue_catalog import get_queue_endpoint
 log = logging.getLogger(__name__)
 
 
+def _format_job_error_message(exc: Exception) -> str:
+    raw_message = str(exc).strip()
+    message = raw_message or exc.__class__.__name__
+
+    # Common on workers when S3-backed media is enabled but the service lacks AWS creds.
+    if exc.__class__.__name__ == "NoCredentialsError" or "Unable to locate credentials" in message:
+        return (
+            "Storage credentials are missing on the worker. "
+            "Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY for this worker service, "
+            "or disable USE_S3_MEDIA for this environment."
+        )
+
+    return f"{exc.__class__.__name__}: {message}"
+
+
 def _fail_job_with_refund(job: AnalysisJob, exc: Exception) -> None:
+    log.exception(
+        "Analysis job %s (%s) failed for image %s",
+        job.id,
+        job.analysis_type,
+        job.image_id,
+    )
+
     with transaction.atomic():
         job.status = JobStatus.FAILED
         job.completed_at = timezone.now()
         job.actual_cost = Decimal("0.00")
-        job.error_message = str(exc)
+        job.error_message = _format_job_error_message(exc)
         job.save(update_fields=["status", "completed_at", "actual_cost", "error_message", "updated_at"])
         refund_job_charge(job, reason="job failed")
 
