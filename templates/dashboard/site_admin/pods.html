@@ -1,0 +1,176 @@
+{% extends "web/app/app_base.html" %}
+{% load i18n %}
+{% block app %}
+<section class="app-card">
+  <h1 class="pg-title">{% translate "Site Admin - RunPod Pods" %}</h1>
+
+  {% include "dashboard/site_admin/_subnav.html" %}
+
+  {% if options_warning %}
+    <div class="alert alert-warning mb-4">
+      <i class="fa fa-exclamation-triangle"></i>
+      <div>
+        <div>{% translate "RunPod options are using fallback values." %}</div>
+        <div class="text-xs opacity-80">{{ options_warning }}</div>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="card bg-base-200 shadow mb-6">
+    <div class="card-body gap-3">
+      <h2 class="card-title text-base">
+        {% translate "Create Pod" %}
+        {% if options_source %}<span class="badge badge-outline ml-2">{{ options_source }}</span>{% endif %}
+      </h2>
+
+      <form method="post" class="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+        {% csrf_token %}
+
+        <label class="form-control w-full">
+          <span class="label-text">{{ form.pod_name.label }}</span>
+          {{ form.pod_name }}
+          {% if form.pod_name.errors %}<span class="text-error text-xs">{{ form.pod_name.errors|striptags }}</span>{% endif %}
+        </label>
+
+        <label class="form-control w-full">
+          <span class="label-text">{{ form.image_name.label }}</span>
+          {{ form.image_name }}
+          <span class="label-text-alt text-xs opacity-70">{{ form.image_name.help_text }}</span>
+          {% if form.image_name.errors %}<span class="text-error text-xs">{{ form.image_name.errors|striptags }}</span>{% endif %}
+        </label>
+
+        <label class="form-control w-full">
+          <span class="label-text">{{ form.compute_type.label }}</span>
+          {{ form.compute_type }}
+          {% if form.compute_type.errors %}<span class="text-error text-xs">{{ form.compute_type.errors|striptags }}</span>{% endif %}
+        </label>
+
+        <label class="form-control w-full">
+          <span class="label-text">{{ form.cloud_type.label }}</span>
+          {{ form.cloud_type }}
+          {% if form.cloud_type.errors %}<span class="text-error text-xs">{{ form.cloud_type.errors|striptags }}</span>{% endif %}
+        </label>
+
+        <label class="form-control w-full">
+          <span class="label-text">{{ form.gpu_type_id.label }}</span>
+          {{ form.gpu_type_id }}
+          {% if form.gpu_type_id.errors %}<span class="text-error text-xs">{{ form.gpu_type_id.errors|striptags }}</span>{% endif %}
+        </label>
+
+        <label class="form-control w-full">
+          <span class="label-text">{{ form.cpu_flavor_id.label }}</span>
+          {{ form.cpu_flavor_id }}
+          {% if form.cpu_flavor_id.errors %}<span class="text-error text-xs">{{ form.cpu_flavor_id.errors|striptags }}</span>{% endif %}
+        </label>
+
+        <label class="form-control w-full">
+          <span class="label-text">{{ form.data_center_id.label }}</span>
+          {{ form.data_center_id }}
+          {% if form.data_center_id.errors %}<span class="text-error text-xs">{{ form.data_center_id.errors|striptags }}</span>{% endif %}
+        </label>
+
+        <label class="form-control w-full lg:pt-7">
+          <span class="label cursor-pointer justify-start gap-2">
+            {{ form.interruptible }}
+            <span class="label-text">{{ form.interruptible.label }}</span>
+          </span>
+          {% if form.interruptible.errors %}<span class="text-error text-xs">{{ form.interruptible.errors|striptags }}</span>{% endif %}
+        </label>
+
+        <label class="form-control w-full lg:col-span-1">
+          <span class="label-text">{{ form.ports.label }}</span>
+          {{ form.ports }}
+          <span class="label-text-alt text-xs opacity-70">{{ form.ports.help_text }}</span>
+          {% if form.ports.errors %}<span class="text-error text-xs">{{ form.ports.errors|striptags }}</span>{% endif %}
+        </label>
+
+        <label class="form-control w-full lg:col-span-1">
+          <span class="label-text">{{ form.env_vars.label }}</span>
+          {{ form.env_vars }}
+          <span class="label-text-alt text-xs opacity-70">{{ form.env_vars.help_text }}</span>
+          {% if form.env_vars.errors %}<span class="text-error text-xs">{{ form.env_vars.errors|striptags }}</span>{% endif %}
+        </label>
+
+        <div class="lg:col-span-2">
+          <button type="submit" class="btn btn-primary btn-sm">{% translate "Create Pod" %}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <h2 class="text-lg font-semibold mb-2">{% translate "Current Pods" %}</h2>
+  <div class="overflow-x-auto">
+    <table class="table table-sm w-full">
+      <thead>
+        <tr>
+          <th>{% translate "Name" %}</th>
+          <th>{% translate "Image" %}</th>
+          <th>{% translate "Compute" %}</th>
+          <th>{% translate "Hardware" %}</th>
+          <th>{% translate "Data Center" %}</th>
+          <th>{% translate "Status" %}</th>
+          <th>{% translate "Interruptible" %}</th>
+          <th>{% translate "Actions" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pod in pods %}
+          <tr class="hover">
+            <td class="font-medium">{{ pod.name|default:pod.id }}</td>
+            <td class="max-w-xs truncate">{{ pod.image_name|default:"-" }}</td>
+            <td>{{ pod.compute_type|default:"-" }}</td>
+            <td>
+              {% if pod.gpu_type_id %}
+                {{ pod.gpu_type_id }}
+              {% elif pod.cpu_flavor_id %}
+                {{ pod.cpu_flavor_id }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>{{ pod.data_center_id|default:"-" }}</td>
+            <td>
+              {% if pod.status|lower == "running" %}
+                <span class="badge badge-success badge-sm">{{ pod.status }}</span>
+              {% elif pod.status|lower == "stopped" %}
+                <span class="badge badge-warning badge-sm">{{ pod.status }}</span>
+              {% elif pod.status|lower == "failed" %}
+                <span class="badge badge-error badge-sm">{{ pod.status }}</span>
+              {% else %}
+                <span class="badge badge-sm">{{ pod.status }}</span>
+              {% endif %}
+            </td>
+            <td>{{ pod.interruptible|yesno:"Yes,No" }}</td>
+            <td>
+              <div class="flex gap-2">
+                <form method="post" action="{% url 'dashboard:admin_pod_action' pod.id %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="pause">
+                  <button class="btn btn-ghost btn-xs" type="submit">{% translate "Pause" %}</button>
+                </form>
+                <form method="post" action="{% url 'dashboard:admin_pod_action' pod.id %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="resume">
+                  <button class="btn btn-ghost btn-xs" type="submit">{% translate "Resume" %}</button>
+                </form>
+                <form
+                  method="post"
+                  action="{% url 'dashboard:admin_pod_action' pod.id %}"
+                  onsubmit="return confirm('{% translate "Terminate this pod permanently?" %}')">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="terminate">
+                  <button class="btn btn-error btn-xs" type="submit">{% translate "Terminate" %}</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="8" class="text-center opacity-50">{% translate "No pods found." %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

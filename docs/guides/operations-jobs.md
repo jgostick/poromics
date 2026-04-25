@@ -49,3 +49,69 @@ Routing intent:
 3. Confirm worker is bound to the expected queue.
 4. Inspect `AnalysisJob.parameters` for routing metadata.
 5. Check refund/failure flow when remote execution fails.
+
+## RunPod Pod Controls (Site Admin)
+
+Site Admin now includes a Pods tab for superusers at `/dashboard/site-admin/pods/`.
+
+Supported actions:
+
+- List pods
+- Create pod
+- Pause pod (`stop`)
+- Resume pod (`start`)
+- Terminate pod (`delete`)
+
+The dashboard does not call RunPod directly. It uses the shared service module in `apps/utils/runpod_pods.py`.
+
+### Required Settings
+
+- `RUNPOD_API_BASE_URL` (default `https://rest.runpod.io/v1`)
+- `RUNPOD_API_KEY`
+- `RUNPOD_DEFAULT_CLOUD_TYPE`
+- `RUNPOD_DEFAULT_COMPUTE_TYPE`
+- `RUNPOD_DEFAULT_PORTS` (comma-separated list, e.g. `8888/http,22/tcp`)
+- `RUNPOD_REGISTRY_AUTH_ID` (optional)
+- `RUNPOD_REGISTRY_USERNAME` (optional fallback)
+- `RUNPOD_REGISTRY_PAT` (optional fallback)
+
+Timeout/retry knobs:
+
+- `RUNPOD_CONNECT_TIMEOUT_SECONDS`
+- `RUNPOD_HTTP_TIMEOUT_SECONDS`
+- `RUNPOD_RETRY_COUNT`
+- `RUNPOD_RETRY_BACKOFF_SECONDS`
+- `RUNPOD_OPTIONS_CACHE_TTL_SECONDS`
+- `RUNPOD_IDEMPOTENCY_TTL_SECONDS`
+
+### Shared Service Contract (Dashboard and Workers)
+
+The reusable API for callers is:
+
+- `list_pods()`
+- `get_creation_options(force_refresh=False)`
+- `create_pod(spec, idempotency_key=None)`
+- `pause_pod(pod_id)`
+- `resume_pod(pod_id)`
+- `terminate_pod(pod_id)`
+
+Programmatic helper wrappers for future worker orchestration are also provided:
+
+- `ensure_pod_exists(spec, idempotency_key=None)`
+- `pause_idle_pod(pod_id)`
+- `terminate_broken_pod(pod_id)`
+
+Typed exceptions for normalized error handling:
+
+- `RunPodConfigurationError`
+- `RunPodAuthError`
+- `RunPodValidationError`
+- `RunPodCapacityError`
+- `RunPodTransientError`
+- `RunPodNotFoundError`
+- `RunPodAPIError`
+
+### Current Celery Integration Seam
+
+`apps/pore_analysis/runpod_orchestration.py` defines an intentionally no-op hook that is called by CPU task paths.
+This preserves current routing behavior while establishing a stable integration point for later autoscaling work.

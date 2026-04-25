@@ -76,6 +76,12 @@
     </a>
   </li>
   <li>
+    <a href="{% url 'dashboard:admin_pods' %}" {% if active_tab == 'admin-pods' %}class="menu-active"{% endif %}>
+      <i class="fa fa-cube h-4 w-4"></i>
+      {% translate "Pods" %}
+    </a>
+  </li>
+  <li>
     <a href="{% url 'support:hijack_user' %}" {% if active_tab == 'support' %}class="menu-active"{% endif %}>
       <i class="fa fa-user-secret h-4 w-4"></i>
       {% translate "Impersonate a User" %}

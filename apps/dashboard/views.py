@@ -8,7 +8,7 @@ from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 from django.utils import timezone
 
-from apps.dashboard.forms import AdminCreditGrantForm, AdminJobFilterForm, DateRangeForm
+from apps.dashboard.forms import AdminCreditGrantForm, AdminJobFilterForm, AdminRunPodCreateForm, DateRangeForm
 from apps.dashboard.services import (
     get_celery_status,
     get_credits_by_team,
@@ -19,6 +19,7 @@ from apps.dashboard.services import (
 )
 from apps.pore_analysis.models import CreditTransaction
 from apps.users.models import CustomUser
+from apps.utils import runpod_pods
 
 
 def _string_to_date(date_str: str) -> date:
@@ -140,6 +141,86 @@ def admin_celery(request):
             "active_tab": "admin-celery",
         },
     )
+
+
+@_superuser_required
+def admin_pods(request):
+    creation_options = runpod_pods.get_creation_options()
+
+    if request.method == "POST":
+        form = AdminRunPodCreateForm(request.POST, creation_options=creation_options)
+        if form.is_valid():
+            spec = {
+                "pod_name": form.cleaned_data["pod_name"],
+                "image_name": form.cleaned_data["image_name"],
+                "compute_type": form.cleaned_data["compute_type"],
+                "gpu_type_id": form.cleaned_data.get("gpu_type_id") or "",
+                "cpu_flavor_id": form.cleaned_data.get("cpu_flavor_id") or "",
+                "data_center_id": form.cleaned_data.get("data_center_id") or "",
+                "cloud_type": form.cleaned_data.get("cloud_type") or "",
+                "interruptible": form.cleaned_data.get("interruptible", False),
+                "ports": form.cleaned_data.get("parsed_ports") or form.cleaned_data.get("ports") or "",
+                "env": form.cleaned_data.get("parsed_env") or {},
+            }
+
+            try:
+                pod = runpod_pods.create_pod(spec)
+            except runpod_pods.RunPodError as exc:
+                messages.error(request, f"Unable to create pod: {exc}")
+            else:
+                pod_name = pod.get("name") or pod.get("id") or "pod"
+                messages.success(request, f"RunPod pod '{pod_name}' is ready.")
+                return redirect("dashboard:admin_pods")
+        else:
+            messages.error(request, "Please correct the pod form errors below.")
+    else:
+        form = AdminRunPodCreateForm(creation_options=creation_options)
+
+    try:
+        pods = runpod_pods.list_pods()
+    except runpod_pods.RunPodError as exc:
+        messages.error(request, f"Unable to load pods: {exc}")
+        pods = []
+
+    return TemplateResponse(
+        request,
+        "dashboard/site_admin/pods.html",
+        context={
+            "active_tab": "admin-pods",
+            "form": form,
+            "pods": pods,
+            "options_source": creation_options.get("source"),
+            "options_warning": creation_options.get("warning"),
+        },
+    )
+
+
+@_superuser_required
+def admin_pod_action(request, pod_id: str):
+    if request.method != "POST":
+        return redirect("dashboard:admin_pods")
+
+    action = str(request.POST.get("action") or "").strip().lower()
+
+    try:
+        if action == "pause":
+            runpod_pods.pause_pod(pod_id)
+            messages.success(request, f"Pod '{pod_id}' paused.")
+        elif action == "resume":
+            runpod_pods.resume_pod(pod_id)
+            messages.success(request, f"Pod '{pod_id}' resumed.")
+        elif action == "terminate":
+            terminated = runpod_pods.terminate_pod(pod_id)
+            if terminated.get("terminated"):
+                messages.success(request, f"Pod '{pod_id}' terminated.")
+            else:
+                messages.info(request, f"Pod '{pod_id}' was already terminated.")
+        else:
+            messages.error(request, "Unknown pod action requested.")
+    except runpod_pods.RunPodError as exc:
+        messages.error(request, f"Unable to {action or 'run action on'} pod '{pod_id}': {exc}")
+
+    return redirect("dashboard:admin_pods")
 
 
 @_superuser_required

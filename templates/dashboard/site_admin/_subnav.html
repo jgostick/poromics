@@ -16,4 +16,8 @@
      class="tab {% if active_tab == 'admin-celery' %}tab-active{% endif %}">
     <i class="fa fa-cogs mr-1"></i>{% translate "Celery" %}
   </a>
+  <a href="{% url 'dashboard:admin_pods' %}"
+     class="tab {% if active_tab == 'admin-pods' %}tab-active{% endif %}">
+    <i class="fa fa-cube mr-1"></i>{% translate "Pods" %}
+  </a>
 </div>

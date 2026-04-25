@@ -540,13 +540,28 @@ PYTHON_REMOTE_DEFAULT_SERVER_URL = env(
     default=_first_catalog_endpoint("cpu", fallback=""),
 )
 PYTHON_REMOTE_QUEUE_ENDPOINTS = build_queue_endpoint_map(QUEUE_CATALOG, "cpu")
-PYTHON_REMOTE_QUEUE_ENDPOINTS.update(
-    _parse_queue_endpoint_pairs(env.list("PYTHON_REMOTE_QUEUE_ENDPOINTS", default=[]))
-)
+PYTHON_REMOTE_QUEUE_ENDPOINTS.update(_parse_queue_endpoint_pairs(env.list("PYTHON_REMOTE_QUEUE_ENDPOINTS", default=[])))
 
 if PYTHON_REMOTE_DEFAULT_SERVER_URL:
     for _queue_name in _queue_names_for_compute("cpu"):
         PYTHON_REMOTE_QUEUE_ENDPOINTS.setdefault(_queue_name, PYTHON_REMOTE_DEFAULT_SERVER_URL)
+
+# RunPod Pod lifecycle controls (shared across dashboard and workers).
+RUNPOD_API_BASE_URL = env("RUNPOD_API_BASE_URL", default="https://rest.runpod.io/v1")
+RUNPOD_API_KEY = env("RUNPOD_API_KEY", default="")
+RUNPOD_DEFAULT_CLOUD_TYPE = env("RUNPOD_DEFAULT_CLOUD_TYPE", default="SECURE")
+RUNPOD_DEFAULT_COMPUTE_TYPE = env("RUNPOD_DEFAULT_COMPUTE_TYPE", default="GPU")
+RUNPOD_DEFAULT_PORTS = env.list("RUNPOD_DEFAULT_PORTS", default=["8888/http", "22/tcp"])
+RUNPOD_REGISTRY_AUTH_ID = env("RUNPOD_REGISTRY_AUTH_ID", default="")
+RUNPOD_REGISTRY_USERNAME = env("RUNPOD_REGISTRY_USERNAME", default="")
+RUNPOD_REGISTRY_PAT = env("RUNPOD_REGISTRY_PAT", default="")
+
+RUNPOD_CONNECT_TIMEOUT_SECONDS = env.float("RUNPOD_CONNECT_TIMEOUT_SECONDS", default=5.0)
+RUNPOD_HTTP_TIMEOUT_SECONDS = env.float("RUNPOD_HTTP_TIMEOUT_SECONDS", default=20.0)
+RUNPOD_RETRY_COUNT = env.int("RUNPOD_RETRY_COUNT", default=2)
+RUNPOD_RETRY_BACKOFF_SECONDS = env.float("RUNPOD_RETRY_BACKOFF_SECONDS", default=0.5)
+RUNPOD_OPTIONS_CACHE_TTL_SECONDS = env.int("RUNPOD_OPTIONS_CACHE_TTL_SECONDS", default=900)
+RUNPOD_IDEMPOTENCY_TTL_SECONDS = env.int("RUNPOD_IDEMPOTENCY_TTL_SECONDS", default=600)
 
 ANALYSIS_DEFAULT_QUEUE_MAP = dict(QUEUE_CATALOG.get("analysis_defaults", {}))
 

@@ -13,6 +13,7 @@ from django.utils import timezone
 from .analysis.pricing import refund_job_charge
 from .models import AnalysisJob, AnalysisResult, JobStatus
 from .queue_catalog import get_queue_endpoint
+from .runpod_orchestration import maybe_ensure_runpod_pod
 
 log = logging.getLogger(__name__)
 
@@ -164,14 +165,15 @@ def run_permeability_job(self, job_id):
 @worker_process_init.connect
 def init_taichi(**kwargs):
     import taichi as ti
+
     arch_map = {
-        'cpu': ti.cpu,
-        'gpu': ti.gpu,
-        'metal': ti.metal,
-        'cuda': ti.cuda,
-        'opengl': ti.opengl,
+        "cpu": ti.cpu,
+        "gpu": ti.gpu,
+        "metal": ti.metal,
+        "cuda": ti.cuda,
+        "opengl": ti.opengl,
     }
-    backend = os.environ.get('TAICHI_BACKEND', 'cpu')
+    backend = os.environ.get("TAICHI_BACKEND", "cpu")
     ti.init(arch=arch_map.get(backend, ti.cpu))
 
 
@@ -192,11 +194,9 @@ def run_diffusivity_job(self, job_id):
 
         # Verify the Julia service is reachable before loading the array.
         from julia_client import _server_healthy
+
         if not _server_healthy(endpoint_url):
-            raise RuntimeError(
-                f"Julia tortuosity service is unreachable for queue '{queue_name}' "
-                f"at {endpoint_url}."
-            )
+            raise RuntimeError(f"Julia tortuosity service is unreachable for queue '{queue_name}' at {endpoint_url}.")
 
         with job.image.file.open("rb") as f:
             arr = np.load(f, allow_pickle=False)
@@ -250,6 +250,12 @@ def run_poresize_job(self, job_id):
     try:
         queue_name = _get_task_queue_name(self.request, default_queue="basic-cpu")
         endpoint_url = _resolve_endpoint_for_job(job, queue_name, compute="cpu")
+
+        maybe_ensure_runpod_pod(
+            queue_name=queue_name,
+            analysis_type="poresize",
+            endpoint_url=endpoint_url,
+        )
 
         if endpoint_url:
             from python_remote_client import _server_healthy as _python_server_healthy
@@ -313,6 +319,12 @@ def run_network_extraction_job(self, job_id):
     try:
         queue_name = _get_task_queue_name(self.request, default_queue="network-cpu")
         endpoint_url = _resolve_endpoint_for_job(job, queue_name, compute="cpu")
+
+        maybe_ensure_runpod_pod(
+            queue_name=queue_name,
+            analysis_type="network_extraction",
+            endpoint_url=endpoint_url,
+        )
 
         if endpoint_url:
             from python_remote_client import _server_healthy as _python_server_healthy
@@ -438,4 +450,3 @@ def run_network_validation_job(self, job_id):
         log.exception("Network validation job %s failed", job_id)
         _fail_job_with_refund(job, exc)
         raise
-
