@@ -38,7 +38,12 @@ For pore-size, payload currently includes:
 
 ## RunPod First Deployment (Pore Size)
 
-Use this when you want the existing `poresize-remote` queue to execute on a RunPod endpoint.
+Use this when you want a pore-size queue such as `poresize-runpod` or `poresize-remote` to execute on a RunPod endpoint.
+
+The repo now includes a containerized path for the current long-running worker model:
+
+- Build image: `deploy/runpod/python-remote/Dockerfile`
+- Deployment notes: `deploy/runpod/README.md`
 
 ## 1) Provision a RunPod endpoint
 
@@ -47,14 +52,14 @@ Use this when you want the existing `poresize-remote` queue to execute on a RunP
     - `POST /job`
     - `GET /job/<job_id>`
     - `DELETE /job/<job_id>`
-- Deploy `python_remote_server.py` in that environment.
+- Deploy the image from `deploy/runpod/python-remote/Dockerfile`, or run `python_remote_server.py` directly in that environment.
 - Ensure required Python packages are installed (`numpy`, `porespy`).
 
 ## 2) Set queue endpoint override in Render
 
 Set the same env var on both web and celery services:
 
-- `PYTHON_REMOTE_QUEUE_ENDPOINTS=poresize-remote=https://<RUNPOD_HOST>,extraction-runpod=https://<RUNPOD_HOST>`
+- `PYTHON_REMOTE_QUEUE_ENDPOINTS=poresize-runpod=https://<RUNPOD_HOST>,extraction-runpod=https://<RUNPOD_HOST>`
 
 Optional default for all `compute_system=cpu` queues:
 
@@ -68,10 +73,34 @@ Notes:
 ## 3) Deploy and smoke test
 
 1. Redeploy web and celery.
-2. Verify queue endpoint from app logs by launching a pore-size job on `poresize-remote` or a network extraction job on `extraction-runpod`.
+2. Verify queue endpoint from app logs by launching a pore-size job on `poresize-runpod` or `poresize-remote`, or a network extraction job on `extraction-runpod`.
 3. Confirm RunPod `/health` responds and jobs progress to completed.
 
 ## Remote Server Setup (Remote Machine)
+
+## 0) Containerized path from this repo
+
+From the repository root, build the image:
+
+```bash
+docker build -f deploy/runpod/python-remote/Dockerfile -t poromics/python-remote:latest .
+```
+
+Run it locally or on a pod host:
+
+```bash
+docker run --rm -p 3100:3100 \
+    -e PYTHON_REMOTE_SERVER_WORKERS=2 \
+    poromics/python-remote:latest
+```
+
+Then verify health:
+
+```bash
+curl http://<REMOTE_HOST>:3100/health
+```
+
+The image follows the repo lockfile and is intended for the current always-on remote worker model.
 
 ## 1) Install dependencies
 

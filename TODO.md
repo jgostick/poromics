@@ -21,3 +21,6 @@
 - [ ] Add cancel and delete buttons to each job in the job list
 - [ ] Make badges on the app home page link to the page they represent (e.g. image count badge → image gallery)
 - [ ] Create a BaseAnalysisHandler class, with a run method. Send serialized instances of that to the remote servers, instead of updating remote_server files to handle each type of new analysis.
+- [ ] The ability to perform analyses on batch of images would be nice.  Simple idea: check multiple images in the gallery, click 'make batch', give it a name, then this batch name is selectable from the normal dropdown menu.  This would trigger the same job on all images. 
+- [ ] The gallery needs to have a list view as well as thumbnails, so many more can show on same page
+

@@ -220,6 +220,21 @@ The important point is that `kabs-gpu` stays the queue name. Local vs remote is 
 
 ### 2) Run the Taichi server on the remote machine
 
+Containerized path from this repo:
+
+```bash
+docker build -f deploy/runpod/taichi/Dockerfile -t poromics/taichi-remote:latest .
+docker run --rm --gpus all -p 3000:3000 \
+	-e TAICHI_BACKEND=gpu \
+	poromics/taichi-remote:latest
+```
+
+For local CPU-only smoke tests, drop `--gpus all` and set `TAICHI_BACKEND=cpu`.
+
+See `deploy/runpod/README.md` for the matching Python remote image and queue override examples.
+
+Raw script path:
+
 Copy only `taichi_server.py` to the remote machine and run:
 
 ```bash
