@@ -6,11 +6,17 @@ import base64
 import io
 import logging
 from contextlib import suppress
+import os
 
 import httpx
 import numpy as np
 
 log = logging.getLogger(__name__)
+
+HEALTH_TIMEOUT_SECONDS = float(os.environ.get("PYTHON_REMOTE_HEALTH_TIMEOUT_SECONDS", "15.0"))
+REQUEST_TIMEOUT_SECONDS = float(os.environ.get("PYTHON_REMOTE_REQUEST_TIMEOUT_SECONDS", "60.0"))
+POLL_TIMEOUT_SECONDS = float(os.environ.get("PYTHON_REMOTE_POLL_TIMEOUT_SECONDS", "60.0"))
+DELETE_TIMEOUT_SECONDS = float(os.environ.get("PYTHON_REMOTE_DELETE_TIMEOUT_SECONDS", "10.0"))
 
 
 def _normalize_endpoint(endpoint_url: str | None) -> str:
@@ -22,7 +28,7 @@ def _server_healthy(endpoint_url: str | None) -> bool:
     if not endpoint:
         return False
     try:
-        response = httpx.get(f"{endpoint}/health", timeout=5.0)
+        response = httpx.get(f"{endpoint}/health", timeout=HEALTH_TIMEOUT_SECONDS)
         return response.status_code == 200
     except Exception:
         return False
@@ -47,7 +53,7 @@ def submit_job(*, analysis_type: str, payload: dict, endpoint_url: str) -> str:
     response = httpx.post(
         f"{endpoint}/job",
         json={"analysis_type": analysis_type, "payload": payload},
-        timeout=30.0,
+        timeout=REQUEST_TIMEOUT_SECONDS,
     )
     response.raise_for_status()
     data = response.json()
@@ -60,7 +66,7 @@ def submit_job(*, analysis_type: str, payload: dict, endpoint_url: str) -> str:
 def poll_job(*, job_id: str, endpoint_url: str) -> dict | None:
     endpoint = _normalize_endpoint(endpoint_url)
     try:
-        response = httpx.get(f"{endpoint}/job/{job_id}", timeout=30.0)
+        response = httpx.get(f"{endpoint}/job/{job_id}", timeout=POLL_TIMEOUT_SECONDS)
     except httpx.TimeoutException:
         log.warning("Timed out polling Python remote job %s at %s; continuing to wait", job_id, endpoint)
         return None
@@ -84,4 +90,4 @@ def poll_job(*, job_id: str, endpoint_url: str) -> dict | None:
 def cancel_job(*, job_id: str, endpoint_url: str) -> None:
     endpoint = _normalize_endpoint(endpoint_url)
     with suppress(Exception):
-        httpx.delete(f"{endpoint}/job/{job_id}", timeout=5.0)
+        httpx.delete(f"{endpoint}/job/{job_id}", timeout=DELETE_TIMEOUT_SECONDS)

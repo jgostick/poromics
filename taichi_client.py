@@ -3,11 +3,18 @@
 import base64
 import io
 import logging
+import os
+from contextlib import suppress
 
 import httpx
 import numpy as np
 
 log = logging.getLogger(__name__)
+
+HEALTH_TIMEOUT_SECONDS = float(os.environ.get("TAICHI_HEALTH_TIMEOUT_SECONDS", "15.0"))
+REQUEST_TIMEOUT_SECONDS = float(os.environ.get("TAICHI_REQUEST_TIMEOUT_SECONDS", "60.0"))
+POLL_TIMEOUT_SECONDS = float(os.environ.get("TAICHI_POLL_TIMEOUT_SECONDS", "60.0"))
+DELETE_TIMEOUT_SECONDS = float(os.environ.get("TAICHI_DELETE_TIMEOUT_SECONDS", "10.0"))
 
 
 def _normalize_endpoint(endpoint_url: str | None) -> str:
@@ -20,7 +27,7 @@ def _server_healthy(endpoint_url: str | None) -> bool:
     if not endpoint:
         return False
     try:
-        response = httpx.get(f"{endpoint}/health", timeout=5.0)
+        response = httpx.get(f"{endpoint}/health", timeout=HEALTH_TIMEOUT_SECONDS)
         return response.status_code == 200
     except Exception:
         return False
@@ -55,7 +62,7 @@ def submit_job(
         "voxel_size": float(voxel_size),
     }
 
-    response = httpx.post(f"{endpoint}/permeability", json=payload, timeout=30.0)
+    response = httpx.post(f"{endpoint}/permeability", json=payload, timeout=REQUEST_TIMEOUT_SECONDS)
     response.raise_for_status()
     data = response.json()
     job_id = data.get("job_id")
@@ -67,7 +74,7 @@ def submit_job(
 def poll_job(*, job_id: str, endpoint_url: str) -> dict | None:
     endpoint = _normalize_endpoint(endpoint_url)
     try:
-        response = httpx.get(f"{endpoint}/job/{job_id}", timeout=30.0)
+        response = httpx.get(f"{endpoint}/job/{job_id}", timeout=POLL_TIMEOUT_SECONDS)
     except httpx.TimeoutException:
         # Treat poll timeouts as transient and continue polling.
         log.warning("Timed out polling Taichi job %s at %s; continuing to wait", job_id, endpoint)
@@ -92,7 +99,5 @@ def poll_job(*, job_id: str, endpoint_url: str) -> dict | None:
 
 def cancel_job(*, job_id: str, endpoint_url: str) -> None:
     endpoint = _normalize_endpoint(endpoint_url)
-    try:
-        httpx.delete(f"{endpoint}/job/{job_id}", timeout=5.0)
-    except Exception:
-        pass
+    with suppress(Exception):
+        httpx.delete(f"{endpoint}/job/{job_id}", timeout=DELETE_TIMEOUT_SECONDS)

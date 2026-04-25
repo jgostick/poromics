@@ -179,17 +179,6 @@ def permeability_launch(request, team_slug):
                 messages.error(request, _("Queue service unavailable. %(reason)s") % {"reason": reason})
                 return redirect("pore_analysis_team:permeability_launch", team_slug=team_slug)
 
-            if endpoint:
-                from taichi_client import _server_healthy as _taichi_server_healthy
-
-                if not _taichi_server_healthy(endpoint):
-                    messages.error(
-                        request,
-                        _("Taichi service for queue '%(queue)s' is unreachable at %(endpoint)s.")
-                        % {"queue": queue, "endpoint": endpoint},
-                    )
-                    return redirect("pore_analysis_team:permeability_launch", team_slug=team_slug)
-
             try:
                 job = _create_job_with_upfront_charge(
                     team=request.team,
@@ -253,16 +242,6 @@ def diffusivity_launch(request, team_slug):
             ok, reason = _broker_ready(run_diffusivity_job.app)
             if not ok:
                 messages.error(request, _("Queue service unavailable. %(reason)s") % {"reason": reason})
-                return redirect("pore_analysis_team:diffusivity_launch", team_slug=team_slug)
-
-            from julia_client import _server_healthy
-
-            if not _server_healthy(endpoint):
-                messages.error(
-                    request,
-                    _("Julia service for queue '%(queue)s' is unreachable at %(endpoint)s.")
-                    % {"queue": queue, "endpoint": endpoint},
-                )
                 return redirect("pore_analysis_team:diffusivity_launch", team_slug=team_slug)
 
             try:
@@ -341,17 +320,6 @@ def pore_size_launch(request, team_slug):
                 messages.error(request, _("Queue service unavailable. %(reason)s") % {"reason": reason})
                 return redirect(REDIRECT_NAME_ON_ERROR, team_slug=team_slug)
 
-            if endpoint:
-                from python_remote_client import _server_healthy as _python_server_healthy
-
-                if not _python_server_healthy(endpoint):
-                    messages.error(
-                        request,
-                        _("Python remote service for queue '%(queue)s' is unreachable at %(endpoint)s.")
-                        % {"queue": queue, "endpoint": endpoint},
-                    )
-                    return redirect(REDIRECT_NAME_ON_ERROR, team_slug=team_slug)
-
             # 5) Create AnalysisJob row and charge credits up front
             try:
                 job = _create_job_with_upfront_charge(
@@ -418,17 +386,6 @@ def network_extraction_launch(request, team_slug):
             if not ok:
                 messages.error(request, _("Queue service unavailable. %(reason)s") % {"reason": reason})
                 return redirect("pore_analysis_team:network_extraction_launch", team_slug=team_slug)
-
-            if endpoint:
-                from python_remote_client import _server_healthy as _python_server_healthy
-
-                if not _python_server_healthy(endpoint):
-                    messages.error(
-                        request,
-                        _("Python remote service for queue '%(queue)s' is unreachable at %(endpoint)s.")
-                        % {"queue": queue, "endpoint": endpoint},
-                    )
-                    return redirect("pore_analysis_team:network_extraction_launch", team_slug=team_slug)
 
             try:
                 job = _create_job_with_upfront_charge(
