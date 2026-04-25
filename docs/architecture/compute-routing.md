@@ -68,6 +68,21 @@ Functions involved:
 - If endpoint is configured, task checks health and logs warning on failure, then still attempts submit/poll path.
 - If endpoint is blank/unconfigured, analysis uses local in-process path.
 
+#### Worker-driven RunPod wake-up (taichi-runpod)
+
+- Permeability task flow now calls `maybe_ensure_runpod_pod` before Taichi remote health and submit.
+- Wake behavior is settings-gated and queue-mapped:
+	- `RUNPOD_WORKER_WAKE_ENABLED`
+	- `RUNPOD_QUEUE_POD_IDS` (`queue=pod-id` pairs)
+	- `RUNPOD_WAKE_TIMEOUT_SECONDS`
+	- `RUNPOD_WAKE_POLL_INTERVAL_SECONDS`
+- For mapped queues with remote endpoint routing, workers:
+	1. inspect pod status,
+	2. request pod start when needed,
+	3. poll until `RUNNING` or timeout,
+	4. then proceed with existing Taichi submit/poll logic.
+- Current implementation is wake-only. Idle pause and terminate automation are intentionally out of scope.
+
 ## Service Interfaces
 
 Remote clients:

@@ -113,5 +113,32 @@ Typed exceptions for normalized error handling:
 
 ### Current Celery Integration Seam
 
-`apps/pore_analysis/runpod_orchestration.py` defines an intentionally no-op hook that is called by CPU task paths.
-This preserves current routing behavior while establishing a stable integration point for later autoscaling work.
+`apps/pore_analysis/runpod_orchestration.py` now supports worker-side pod wake-up before remote dispatch.
+
+Current scope:
+
+- Wake behavior is enabled by settings.
+- Queue-to-pod mapping is explicit (queue name -> RunPod pod id).
+- Permeability tasks call this hook before Taichi health/submit when endpoint routing is remote.
+- Pause/terminate automation remains disabled (wake-only behavior).
+
+Required worker settings:
+
+- `RUNPOD_WORKER_WAKE_ENABLED` (`true` or `false`)
+- `RUNPOD_QUEUE_POD_IDS` (`queue=pod-id` pairs, comma-separated)
+- `RUNPOD_WAKE_TIMEOUT_SECONDS` (default `300`)
+- `RUNPOD_WAKE_POLL_INTERVAL_SECONDS` (default `5`)
+
+Example:
+
+```bash
+RUNPOD_WORKER_WAKE_ENABLED=true
+RUNPOD_QUEUE_POD_IDS=taichi-runpod=abc123podid
+RUNPOD_WAKE_TIMEOUT_SECONDS=300
+RUNPOD_WAKE_POLL_INTERVAL_SECONDS=5
+```
+
+Notes:
+
+- If wake is disabled, queue mapping is missing, or endpoint routing is blank, the hook returns immediately.
+- If pod wake does not reach `RUNNING` before timeout, task execution fails and follows existing retry/refund behavior.

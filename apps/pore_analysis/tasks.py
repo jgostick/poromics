@@ -107,6 +107,12 @@ def run_permeability_job(self, job_id):
         queue_name = _get_task_queue_name(self.request, default_queue="kabs-cpu")
         endpoint_url = _resolve_endpoint_for_job(job, queue_name, compute="taichi")
 
+        maybe_ensure_runpod_pod(
+            queue_name=queue_name,
+            analysis_type="permeability",
+            endpoint_url=endpoint_url,
+        )
+
         if endpoint_url:
             from taichi_client import _server_healthy as _taichi_server_healthy
 
