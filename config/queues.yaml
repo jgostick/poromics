@@ -12,17 +12,17 @@ analysis_defaults:
 # And add the corresponding block below...
 
 queues:
-  # - name: kabs-cpu
-  #   display_name: kabs-cpu
-  #   backend_key: cpu
-  #   compute_system: taichi
-  #   analyses:
-  #     - permeability
-  #   endpoint_url: ""
-  #   enabled: true
-  #   capabilities: []
-  #   pricing:
-  #     default_credits_per_million_voxels: "1.0000"
+  - name: kabs-cpu
+    display_name: kabs-cpu
+    backend_key: cpu
+    compute_system: taichi
+    analyses:
+      - permeability
+    endpoint_url: ""
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "1.0000"
 
   # - name: kabs-gpu
   #   display_name: kabs-gpu
@@ -96,17 +96,17 @@ queues:
   #   pricing:
   #     default_credits_per_million_voxels: "2.0000"
 
-  # - name: julia-cpu
-  #   display_name: julia-cpu
-  #   backend_key: cpu
-  #   compute_system: julia
-  #   analyses:
-  #     - diffusivity
-  #   endpoint_url: http://129.97.161.145:2999
-  #   enabled: true
-  #   capabilities: []
-  #   pricing:
-  #     default_credits_per_million_voxels: "1.2500"
+  - name: julia-cpu
+    display_name: julia-cpu
+    backend_key: cpu
+    compute_system: julia
+    analyses:
+      - diffusivity
+    endpoint_url: http://129.97.161.145:2999
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "1.2500"
 
   # - name: julia-gpu
   #   display_name: julia-gpu
