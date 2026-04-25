@@ -48,6 +48,19 @@ queues:
     pricing:
       default_credits_per_million_voxels: "2.0000"
 
+
+  - name: taichi-runpod
+    display_name: taichi-pod
+    backend_key: gpu
+    compute_system: taichi
+    analyses:
+      - permeability
+    endpoint_url: 
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "2.0000"
+
   - name: kabs-metal
     display_name: kabs-metal
     backend_key: metal
