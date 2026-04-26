@@ -294,6 +294,43 @@ def _extract_pod_payload(payload: dict[str, Any] | list[Any] | None) -> dict[str
     return {}
 
 
+def _maybe_url(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    normalized = value.strip()
+    if normalized.startswith("http://") or normalized.startswith("https://"):
+        return normalized
+    return ""
+
+
+def _extract_endpoint_url(raw: dict[str, Any]) -> str:
+    # Common shapes returned by RunPod variants and proxies.
+    for key in (
+        "endpointUrl",
+        "endpointURL",
+        "podUrl",
+        "proxyUrl",
+        "publicUrl",
+        "apiUrl",
+        "url",
+    ):
+        maybe = _maybe_url(raw.get(key))
+        if maybe:
+            return maybe
+
+    endpoints = raw.get("endpoints")
+    if isinstance(endpoints, list):
+        for endpoint in endpoints:
+            if not isinstance(endpoint, dict):
+                continue
+            for key in ("url", "endpointUrl", "publicUrl"):
+                maybe = _maybe_url(endpoint.get(key))
+                if maybe:
+                    return maybe
+
+    return ""
+
+
 def _normalize_pod(raw: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": _first_non_empty(raw, ("id", "podId")),
@@ -307,6 +344,7 @@ def _normalize_pod(raw: dict[str, Any]) -> dict[str, Any]:
         "data_center_id": _first_non_empty(raw, ("dataCenterId", "dataCenter")),
         "interruptible": bool(raw.get("interruptible", False)),
         "desired_status": _first_non_empty(raw, ("desiredStatus",)),
+        "endpoint_url": _extract_endpoint_url(raw),
     }
 
 

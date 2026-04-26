@@ -238,9 +238,14 @@ def admin_pod_map(request, pod_id: str):
         return redirect("dashboard:admin_pods")
 
     queue_name = form.cleaned_data["queue_name"]
-    endpoint_url = form.cleaned_data["endpoint_url"] or get_queue_endpoint(queue_name, default="").strip()
+
+    pod_endpoint_url = str(request.POST.get("pod_endpoint_url") or "").strip()
+    mapped_endpoint_url = str(
+        RunPodQueueMapping.objects.filter(pod_id=pod_id).values_list("endpoint_url", flat=True).first() or ""
+    ).strip()
+    endpoint_url = pod_endpoint_url or mapped_endpoint_url or get_queue_endpoint(queue_name, default="").strip()
     if not endpoint_url:
-        messages.error(request, f"Queue '{queue_name}' has no endpoint configured. Enter an endpoint URL.")
+        messages.error(request, f"Queue '{queue_name}' has no endpoint available for automatic mapping.")
         return redirect("dashboard:admin_pods")
 
     pod_name = str(request.POST.get("pod_name") or "").strip()

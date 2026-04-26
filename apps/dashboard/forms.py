@@ -220,13 +220,6 @@ class AdminRunPodQueueMappingForm(forms.Form):
         label="Queue",
         widget=forms.Select(attrs={"class": "select select-bordered select-xs w-full"}),
     )
-    endpoint_url = forms.URLField(
-        required=False,
-        label="Endpoint",
-        widget=forms.URLInput(
-            attrs={"class": "input input-bordered input-xs w-full", "placeholder": "https://<runpod-host>"}
-        ),
-    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -239,6 +232,3 @@ class AdminRunPodQueueMappingForm(forms.Form):
         if queue_name not in allowed:
             raise forms.ValidationError("Select a valid RunPod queue.")
         return queue_name
-
-    def clean_endpoint_url(self) -> str:
-        return str(self.cleaned_data.get("endpoint_url") or "").strip()

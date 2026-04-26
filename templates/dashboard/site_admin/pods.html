@@ -155,17 +155,12 @@
               <form method="post" action="{% url 'dashboard:admin_pod_map' pod.id %}" class="flex flex-col gap-1">
                 {% csrf_token %}
                 <input type="hidden" name="pod_name" value="{{ pod.name|default:'' }}">
+                <input type="hidden" name="pod_endpoint_url" value="{{ pod.endpoint_url|default:'' }}">
                 <select name="queue_name" class="select select-bordered select-xs w-full">
                   {% for queue_name, label in pod.queue_choices %}
                     <option value="{{ queue_name }}" {% if pod.mapping and pod.mapping.queue_name == queue_name %}selected{% endif %}>{{ label }}</option>
                   {% endfor %}
                 </select>
-                <input
-                  name="endpoint_url"
-                  type="url"
-                  class="input input-bordered input-xs w-full"
-                  placeholder="https://&lt;runpod-host&gt;"
-                  value="{{ pod.mapping.endpoint_url|default:'' }}">
                 <button class="btn btn-primary btn-xs" type="submit">{% translate "Save Map" %}</button>
               </form>
 

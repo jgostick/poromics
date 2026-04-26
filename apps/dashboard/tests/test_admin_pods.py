@@ -149,7 +149,7 @@ class AdminPodsViewTests(TestCase):
             reverse("dashboard:admin_pod_map", kwargs={"pod_id": "pod-1"}),
             {
                 "queue_name": "taichi-runpod",
-                "endpoint_url": "https://runpod-taichi.example",
+                "pod_endpoint_url": "https://runpod-taichi.example",
                 "pod_name": "taichi-a",
             },
         )
@@ -179,7 +179,7 @@ class AdminPodsViewTests(TestCase):
             reverse("dashboard:admin_pod_map", kwargs={"pod_id": "pod-1"}),
             {
                 "queue_name": "taichi-runpod",
-                "endpoint_url": "https://new-taichi.example",
+                "pod_endpoint_url": "https://new-taichi.example",
                 "pod_name": "taichi-new",
             },
         )

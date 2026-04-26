@@ -39,6 +39,7 @@ class RunPodPodServiceTests(SimpleTestCase):
                     "status": "RUNNING",
                     "imageName": "ghcr.io/example/image:latest",
                     "gpuTypeId": "NVIDIA_A5000",
+                    "endpointUrl": "https://runpod-alpha.example",
                 }
             ]
         }
@@ -51,6 +52,7 @@ class RunPodPodServiceTests(SimpleTestCase):
         self.assertEqual(pods[0]["name"], "alpha")
         self.assertEqual(pods[0]["image_name"], "ghcr.io/example/image:latest")
         self.assertEqual(pods[0]["gpu_type_id"], "NVIDIA_A5000")
+        self.assertEqual(pods[0]["endpoint_url"], "https://runpod-alpha.example")
 
     def test_get_creation_options_parses_openapi_enums(self):
         openapi = {
