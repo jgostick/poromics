@@ -56,6 +56,13 @@ Functions involved:
 - `_resolve_julia_endpoint`
 - `_resolve_taichi_endpoint`
 
+Endpoint precedence for `get_queue_endpoint`:
+
+1. Runtime DB mapping (`RunPodQueueMapping.endpoint_url`)
+2. Settings override maps (`JULIA_QUEUE_ENDPOINTS`, `TAICHI_QUEUE_ENDPOINTS`, `PYTHON_REMOTE_QUEUE_ENDPOINTS`)
+3. Queue catalog endpoint (`config/queues.yaml`)
+4. Default value provided by caller
+
 ## Local vs Remote Behavior
 
 ### Julia
@@ -82,6 +89,13 @@ Functions involved:
 	3. poll until `RUNNING` or timeout,
 	4. then proceed with existing Taichi submit/poll logic.
 - Current implementation is wake-only. Idle pause and terminate automation are intentionally out of scope.
+- Queue-to-pod mapping precedence is runtime DB mapping first, then `RUNPOD_QUEUE_POD_IDS` settings fallback.
+
+#### Runtime mapping UI (non-production convenience)
+
+- Superusers can map pod->queue from `/dashboard/site-admin/pods/`.
+- Mapping updates both endpoint and pod assignment together.
+- Supported scope is RunPod-named queues (for example `taichi-runpod`, `poresize-runpod`, `extraction-runpod`).
 
 ## Service Interfaces
 

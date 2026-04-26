@@ -1,6 +1,7 @@
 from django import forms
 from django.conf import settings
 
+from apps.pore_analysis.queue_catalog import get_runpod_queue_choices
 from apps.users.models import CustomUser
 from apps.utils.runpod_pods import RunPodValidationError, parse_env_entries, parse_port_mappings
 
@@ -211,3 +212,33 @@ class AdminRunPodCreateForm(forms.Form):
             self.add_error("env_vars", str(exc))
 
         return cleaned
+
+
+class AdminRunPodQueueMappingForm(forms.Form):
+    queue_name = forms.ChoiceField(
+        choices=[],
+        label="Queue",
+        widget=forms.Select(attrs={"class": "select select-bordered select-xs w-full"}),
+    )
+    endpoint_url = forms.URLField(
+        required=False,
+        label="Endpoint",
+        widget=forms.URLInput(
+            attrs={"class": "input input-bordered input-xs w-full", "placeholder": "https://<runpod-host>"}
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._queue_choices = get_runpod_queue_choices()
+        self.fields["queue_name"].choices = self._queue_choices
+
+    def clean_queue_name(self) -> str:
+        queue_name = str(self.cleaned_data.get("queue_name") or "").strip()
+        allowed = {queue for queue, _ in self._queue_choices}
+        if queue_name not in allowed:
+            raise forms.ValidationError("Select a valid RunPod queue.")
+        return queue_name
+
+    def clean_endpoint_url(self) -> str:
+        return str(self.cleaned_data.get("endpoint_url") or "").strip()

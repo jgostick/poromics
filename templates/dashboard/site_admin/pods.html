@@ -110,6 +110,7 @@
           <th>{% translate "Data Center" %}</th>
           <th>{% translate "Status" %}</th>
           <th>{% translate "Interruptible" %}</th>
+          <th>{% translate "Queue Mapping" %}</th>
           <th>{% translate "Actions" %}</th>
         </tr>
       </thead>
@@ -141,6 +142,40 @@
               {% endif %}
             </td>
             <td>{{ pod.interruptible|yesno:"Yes,No" }}</td>
+            <td class="min-w-72">
+              {% if pod.mapping %}
+                <div class="mb-2 text-xs">
+                  <div><span class="font-semibold">{{ pod.mapping.queue_name }}</span></div>
+                  <div class="opacity-70 truncate">{{ pod.mapping.endpoint_url }}</div>
+                </div>
+              {% else %}
+                <div class="mb-2 text-xs opacity-70">{% translate "Not mapped" %}</div>
+              {% endif %}
+
+              <form method="post" action="{% url 'dashboard:admin_pod_map' pod.id %}" class="flex flex-col gap-1">
+                {% csrf_token %}
+                <input type="hidden" name="pod_name" value="{{ pod.name|default:'' }}">
+                <select name="queue_name" class="select select-bordered select-xs w-full">
+                  {% for queue_name, label in pod.queue_choices %}
+                    <option value="{{ queue_name }}" {% if pod.mapping and pod.mapping.queue_name == queue_name %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <input
+                  name="endpoint_url"
+                  type="url"
+                  class="input input-bordered input-xs w-full"
+                  placeholder="https://&lt;runpod-host&gt;"
+                  value="{{ pod.mapping.endpoint_url|default:'' }}">
+                <button class="btn btn-primary btn-xs" type="submit">{% translate "Save Map" %}</button>
+              </form>
+
+              {% if pod.mapping %}
+                <form method="post" action="{% url 'dashboard:admin_pod_unmap' pod.id %}" class="mt-1">
+                  {% csrf_token %}
+                  <button class="btn btn-ghost btn-xs" type="submit">{% translate "Unmap" %}</button>
+                </form>
+              {% endif %}
+            </td>
             <td>
               <div class="flex gap-2">
                 <form method="post" action="{% url 'dashboard:admin_pod_action' pod.id %}">
@@ -166,7 +201,7 @@
           </tr>
         {% empty %}
           <tr>
-            <td colspan="8" class="text-center opacity-50">{% translate "No pods found." %}</td>
+            <td colspan="9" class="text-center opacity-50">{% translate "No pods found." %}</td>
           </tr>
         {% endfor %}
       </tbody>

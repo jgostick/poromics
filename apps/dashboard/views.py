@@ -4,11 +4,18 @@ from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth.decorators import user_passes_test
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 from django.utils import timezone
 
-from apps.dashboard.forms import AdminCreditGrantForm, AdminJobFilterForm, AdminRunPodCreateForm, DateRangeForm
+from apps.dashboard.forms import (
+    AdminCreditGrantForm,
+    AdminJobFilterForm,
+    AdminRunPodCreateForm,
+    AdminRunPodQueueMappingForm,
+    DateRangeForm,
+)
 from apps.dashboard.services import (
     get_celery_status,
     get_credits_by_team,
@@ -17,7 +24,8 @@ from apps.dashboard.services import (
     get_user_signups,
     get_users_with_teams,
 )
-from apps.pore_analysis.models import CreditTransaction
+from apps.pore_analysis.models import CreditTransaction, RunPodQueueMapping
+from apps.pore_analysis.queue_catalog import get_queue_endpoint, get_runpod_queue_choices
 from apps.users.models import CustomUser
 from apps.utils import runpod_pods
 
@@ -182,17 +190,87 @@ def admin_pods(request):
         messages.error(request, f"Unable to load pods: {exc}")
         pods = []
 
+    mappings = list(RunPodQueueMapping.objects.order_by("queue_name"))
+    mapping_by_pod_id = {mapping.pod_id: mapping for mapping in mappings}
+    queue_to_pod = {mapping.queue_name: mapping.pod_id for mapping in mappings}
+
+    queue_choices = get_runpod_queue_choices()
+    pods_with_mappings = []
+    for pod in pods:
+        pod_id = str(pod.get("id") or "").strip()
+        pod_specific_queue_choices = []
+        for queue_name, label in queue_choices:
+            mapped_pod_id = queue_to_pod.get(queue_name)
+            if mapped_pod_id and mapped_pod_id != pod_id:
+                continue
+            pod_specific_queue_choices.append((queue_name, label))
+
+        pod_row = dict(pod)
+        pod_row["mapping"] = mapping_by_pod_id.get(pod_id)
+        pod_row["queue_choices"] = pod_specific_queue_choices
+        pods_with_mappings.append(pod_row)
+
     return TemplateResponse(
         request,
         "dashboard/site_admin/pods.html",
         context={
             "active_tab": "admin-pods",
             "form": form,
-            "pods": pods,
+            "pods": pods_with_mappings,
             "options_source": creation_options.get("source"),
             "options_warning": creation_options.get("warning"),
         },
     )
+
+
+@_superuser_required
+def admin_pod_map(request, pod_id: str):
+    if request.method != "POST":
+        return redirect("dashboard:admin_pods")
+
+    form = AdminRunPodQueueMappingForm(request.POST)
+    if not form.is_valid():
+        error_messages = []
+        for field_name, errors in form.errors.items():
+            label = form.fields[field_name].label if field_name in form.fields else field_name
+            error_messages.append(f"{label}: {', '.join(errors)}")
+        messages.error(request, "Unable to map pod. " + " | ".join(error_messages))
+        return redirect("dashboard:admin_pods")
+
+    queue_name = form.cleaned_data["queue_name"]
+    endpoint_url = form.cleaned_data["endpoint_url"] or get_queue_endpoint(queue_name, default="").strip()
+    if not endpoint_url:
+        messages.error(request, f"Queue '{queue_name}' has no endpoint configured. Enter an endpoint URL.")
+        return redirect("dashboard:admin_pods")
+
+    pod_name = str(request.POST.get("pod_name") or "").strip()
+
+    with transaction.atomic():
+        RunPodQueueMapping.objects.filter(pod_id=pod_id).exclude(queue_name=queue_name).delete()
+        RunPodQueueMapping.objects.update_or_create(
+            queue_name=queue_name,
+            defaults={
+                "pod_id": pod_id,
+                "pod_name": pod_name,
+                "endpoint_url": endpoint_url,
+            },
+        )
+
+    messages.success(request, f"Mapped queue '{queue_name}' to pod '{pod_id}'.")
+    return redirect("dashboard:admin_pods")
+
+
+@_superuser_required
+def admin_pod_unmap(request, pod_id: str):
+    if request.method != "POST":
+        return redirect("dashboard:admin_pods")
+
+    deleted, _ = RunPodQueueMapping.objects.filter(pod_id=pod_id).delete()
+    if deleted:
+        messages.success(request, f"Removed queue mapping for pod '{pod_id}'.")
+    else:
+        messages.info(request, f"No mapping found for pod '{pod_id}'.")
+    return redirect("dashboard:admin_pods")
 
 
 @_superuser_required

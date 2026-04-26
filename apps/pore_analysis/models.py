@@ -364,3 +364,24 @@ class CreditTransaction(BaseTeamModel):
     def __str__(self):
         symbol = "+" if self.amount >= 0 else ""
         return f"{symbol}{self.amount} credits - {self.description} ({self.user.email})"
+
+
+class RunPodQueueMapping(BaseModel):
+    """Runtime override mapping for RunPod queues.
+
+    This non-production convenience model allows queue endpoint and pod mapping
+    updates from the dashboard without service restarts.
+    """
+
+    queue_name = models.CharField(max_length=100, unique=True)
+    pod_id = models.CharField(max_length=100, unique=True)
+    pod_name = models.CharField(max_length=200, blank=True, default="")
+    endpoint_url = models.URLField(max_length=500)
+
+    class Meta:
+        ordering = ["queue_name"]
+        verbose_name = "RunPod Queue Mapping"
+        verbose_name_plural = "RunPod Queue Mappings"
+
+    def __str__(self):
+        return f"{self.queue_name} -> {self.pod_id}"

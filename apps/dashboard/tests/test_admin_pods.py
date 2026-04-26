@@ -5,6 +5,7 @@ from unittest.mock import patch
 from django.test import Client, TestCase
 from django.urls import reverse
 
+from apps.pore_analysis.models import RunPodQueueMapping
 from apps.users.models import CustomUser
 
 
@@ -140,3 +141,63 @@ class AdminPodsViewTests(TestCase):
 
                 self.assertRedirects(response, reverse("dashboard:admin_pods"), fetch_redirect_response=False)
                 action_mock.assert_called_once_with("pod-1")
+
+    def test_admin_pod_map_creates_runtime_mapping(self):
+        self.client.login(username="admin@example.com", password="12345")
+
+        response = self.client.post(
+            reverse("dashboard:admin_pod_map", kwargs={"pod_id": "pod-1"}),
+            {
+                "queue_name": "taichi-runpod",
+                "endpoint_url": "https://runpod-taichi.example",
+                "pod_name": "taichi-a",
+            },
+        )
+
+        self.assertRedirects(response, reverse("dashboard:admin_pods"), fetch_redirect_response=False)
+        mapping = RunPodQueueMapping.objects.get(queue_name="taichi-runpod")
+        self.assertEqual(mapping.pod_id, "pod-1")
+        self.assertEqual(mapping.endpoint_url, "https://runpod-taichi.example")
+
+    def test_admin_pod_map_reassigns_queue_and_enforces_one_queue_per_pod(self):
+        self.client.login(username="admin@example.com", password="12345")
+
+        RunPodQueueMapping.objects.create(
+            queue_name="taichi-runpod",
+            pod_id="pod-old",
+            pod_name="old-taichi",
+            endpoint_url="https://old-taichi.example",
+        )
+        RunPodQueueMapping.objects.create(
+            queue_name="poresize-runpod",
+            pod_id="pod-1",
+            pod_name="cpu-a",
+            endpoint_url="https://cpu.example",
+        )
+
+        response = self.client.post(
+            reverse("dashboard:admin_pod_map", kwargs={"pod_id": "pod-1"}),
+            {
+                "queue_name": "taichi-runpod",
+                "endpoint_url": "https://new-taichi.example",
+                "pod_name": "taichi-new",
+            },
+        )
+
+        self.assertRedirects(response, reverse("dashboard:admin_pods"), fetch_redirect_response=False)
+        self.assertTrue(RunPodQueueMapping.objects.filter(queue_name="taichi-runpod", pod_id="pod-1").exists())
+        self.assertFalse(RunPodQueueMapping.objects.filter(queue_name="poresize-runpod", pod_id="pod-1").exists())
+
+    def test_admin_pod_unmap_deletes_mapping(self):
+        self.client.login(username="admin@example.com", password="12345")
+        RunPodQueueMapping.objects.create(
+            queue_name="taichi-runpod",
+            pod_id="pod-1",
+            pod_name="taichi-a",
+            endpoint_url="https://taichi.example",
+        )
+
+        response = self.client.post(reverse("dashboard:admin_pod_unmap", kwargs={"pod_id": "pod-1"}))
+
+        self.assertRedirects(response, reverse("dashboard:admin_pods"), fetch_redirect_response=False)
+        self.assertFalse(RunPodQueueMapping.objects.filter(pod_id="pod-1").exists())

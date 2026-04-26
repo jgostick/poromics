@@ -13,4 +13,6 @@ urlpatterns = [
     path("site-admin/celery/status/", views.admin_celery_status, name="admin_celery_status"),
     path("site-admin/pods/", views.admin_pods, name="admin_pods"),
     path("site-admin/pods/<str:pod_id>/action/", views.admin_pod_action, name="admin_pod_action"),
+    path("site-admin/pods/<str:pod_id>/map/", views.admin_pod_map, name="admin_pod_map"),
+    path("site-admin/pods/<str:pod_id>/unmap/", views.admin_pod_unmap, name="admin_pod_unmap"),
 ]

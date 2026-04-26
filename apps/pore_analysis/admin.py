@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AnalysisJob, AnalysisResult, CreditTransaction, UploadedImage
+from .models import AnalysisJob, AnalysisResult, CreditTransaction, RunPodQueueMapping, UploadedImage
 
 
 @admin.register(UploadedImage)
@@ -56,3 +56,10 @@ class CreditTransactionAdmin(admin.ModelAdmin):
     list_filter = ["transaction_type", "team", "created_at"]
     search_fields = ["user__email", "description", "stripe_charge_id"]
     readonly_fields = ["id", "created_at", "updated_at"]
+
+
+@admin.register(RunPodQueueMapping)
+class RunPodQueueMappingAdmin(admin.ModelAdmin):
+    list_display = ["queue_name", "pod_id", "pod_name", "endpoint_url", "created_at", "updated_at"]
+    search_fields = ["queue_name", "pod_id", "pod_name", "endpoint_url"]
+    readonly_fields = ["created_at", "updated_at"]

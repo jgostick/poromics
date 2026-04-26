@@ -92,6 +92,60 @@ class RunPodOrchestrationHookTests(SimpleTestCase):
 
     @override_settings(
         RUNPOD_WORKER_WAKE_ENABLED=True,
+        RUNPOD_QUEUE_POD_IDS={"taichi-runpod": "pod-settings"},
+    )
+    def test_runtime_mapping_takes_precedence_over_settings_mapping(self):
+        hook = RunPodOrchestrationHook()
+
+        with (
+            patch(
+                "apps.pore_analysis.runpod_orchestration.get_runtime_runpod_queue_pod_ids",
+                return_value={"taichi-runpod": "pod-runtime"},
+            ),
+            patch(
+                "apps.pore_analysis.runpod_orchestration.list_pods",
+                return_value=[{"id": "pod-runtime", "status": "RUNNING"}],
+            ) as list_mock,
+            patch("apps.pore_analysis.runpod_orchestration.resume_pod") as resume_mock,
+        ):
+            hook.ensure_pod_exists(
+                queue_name="taichi-runpod",
+                analysis_type="permeability",
+                endpoint_url="https://example.runpod.dev",
+            )
+
+        self.assertEqual(list_mock.call_count, 1)
+        resume_mock.assert_not_called()
+
+    @override_settings(
+        RUNPOD_WORKER_WAKE_ENABLED=True,
+        RUNPOD_QUEUE_POD_IDS={},
+    )
+    def test_runtime_mapping_without_settings_mapping_is_used(self):
+        hook = RunPodOrchestrationHook()
+
+        with (
+            patch(
+                "apps.pore_analysis.runpod_orchestration.get_runtime_runpod_queue_pod_ids",
+                return_value={"taichi-runpod": "pod-runtime"},
+            ),
+            patch(
+                "apps.pore_analysis.runpod_orchestration.list_pods",
+                return_value=[{"id": "pod-runtime", "status": "RUNNING"}],
+            ) as list_mock,
+            patch("apps.pore_analysis.runpod_orchestration.resume_pod") as resume_mock,
+        ):
+            hook.ensure_pod_exists(
+                queue_name="taichi-runpod",
+                analysis_type="permeability",
+                endpoint_url="https://example.runpod.dev",
+            )
+
+        self.assertEqual(list_mock.call_count, 1)
+        resume_mock.assert_not_called()
+
+    @override_settings(
+        RUNPOD_WORKER_WAKE_ENABLED=True,
         RUNPOD_QUEUE_POD_IDS={"taichi-runpod": "pod-1"},
         RUNPOD_WAKE_TIMEOUT_SECONDS=5.0,
         RUNPOD_WAKE_POLL_INTERVAL_SECONDS=0.1,

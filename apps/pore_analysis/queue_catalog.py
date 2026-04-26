@@ -277,8 +277,50 @@ def get_queue_backend(queue_name: str) -> str:
     return str(queue.get("backend_key") or "default")
 
 
+def get_runpod_queue_choices() -> list[tuple[str, str]]:
+    choices: list[tuple[str, str]] = []
+    for queue in get_enabled_queues():
+        queue_name = str(queue.get("name") or "").strip()
+        if "runpod" not in queue_name.lower():
+            continue
+        display_name = str(queue.get("display_name") or queue_name)
+        choices.append((queue_name, display_name))
+    return choices
+
+
+def get_runtime_runpod_endpoint(queue_name: str) -> str:
+    try:
+        from .models import RunPodQueueMapping
+
+        endpoint_url = (
+            RunPodQueueMapping.objects.filter(queue_name=queue_name).values_list("endpoint_url", flat=True).first()
+        )
+        return str(endpoint_url or "").strip()
+    except Exception:
+        return ""
+
+
+def get_runtime_runpod_queue_pod_ids() -> dict[str, str]:
+    try:
+        from .models import RunPodQueueMapping
+
+        mappings: dict[str, str] = {}
+        for queue_name, pod_id in RunPodQueueMapping.objects.values_list("queue_name", "pod_id"):
+            normalized_queue = str(queue_name or "").strip()
+            normalized_pod = str(pod_id or "").strip()
+            if normalized_queue and normalized_pod:
+                mappings[normalized_queue] = normalized_pod
+        return mappings
+    except Exception:
+        return {}
+
+
 def get_queue_endpoint(queue_name: str, *, default: str = "") -> str:
     queue = get_queue_config(queue_name)
+    runtime_override = get_runtime_runpod_endpoint(queue_name)
+    if runtime_override:
+        return runtime_override
+
     endpoint = str(queue.get("endpoint_url") or "").strip()
     compute_system = str(queue.get("compute_system") or "").strip()
 

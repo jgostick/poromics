@@ -7,6 +7,8 @@ from django.conf import settings
 
 from apps.utils.runpod_pods import RunPodTransientError, list_pods, resume_pod
 
+from .queue_catalog import get_runtime_runpod_queue_pod_ids
+
 log = logging.getLogger(__name__)
 
 
@@ -19,15 +21,17 @@ def _wake_enabled() -> bool:
 
 
 def _queue_pod_ids() -> dict[str, str]:
+    mapping = get_runtime_runpod_queue_pod_ids()
+
     raw = getattr(settings, "RUNPOD_QUEUE_POD_IDS", {})
     if not isinstance(raw, dict):
-        return {}
+        return mapping
 
-    mapping: dict[str, str] = {}
     for queue_name, pod_id in raw.items():
         normalized_queue = str(queue_name).strip()
         normalized_pod = str(pod_id).strip()
-        if normalized_queue and normalized_pod:
+        # Runtime DB overrides win over static env mappings.
+        if normalized_queue and normalized_pod and normalized_queue not in mapping:
             mapping[normalized_queue] = normalized_pod
     return mapping
 

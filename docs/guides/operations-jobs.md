@@ -142,3 +142,25 @@ Notes:
 
 - If wake is disabled, queue mapping is missing, or endpoint routing is blank, the hook returns immediately.
 - If pod wake does not reach `RUNNING` before timeout, task execution fails and follows existing retry/refund behavior.
+
+### Runtime Queue Mapping from Dashboard (Non-Production)
+
+Superusers can now map a RunPod pod to a RunPod queue from `/dashboard/site-admin/pods/`.
+
+Behavior:
+
+- Mapping stores queue + pod_id + endpoint_url in a database runtime override table.
+- New jobs pick up runtime endpoint overrides without service restart.
+- Worker wake-up resolves queue->pod_id from runtime mapping first, then `RUNPOD_QUEUE_POD_IDS` fallback.
+- One queue maps to one pod and one pod maps to one queue.
+
+Precedence for endpoint routing:
+
+1. Runtime DB mapping (`RunPodQueueMapping.endpoint_url`)
+2. Settings queue endpoint overrides (`*_QUEUE_ENDPOINTS`)
+3. Queue catalog YAML endpoint (`config/queues.yaml`)
+4. Default endpoint argument passed by caller
+
+Operational note:
+
+- This feature is intended for operator convenience in non-production workflows.
