@@ -252,3 +252,33 @@ class RunPodPodServiceTests(SimpleTestCase):
         _, second_call_kwargs = request_mock.call_args_list[1]
         body = second_call_kwargs.get("body") or {}
         self.assertEqual(body.get("name"), "custom-ghcr-auth")
+
+    @override_settings(
+        RUNPOD_REGISTRY_AUTH_ID="",
+        RUNPOD_REGISTRY_AUTH_NAME="custom-ghcr-auth",
+        RUNPOD_REGISTRY_USERNAME="demo-user",
+        RUNPOD_REGISTRY_PAT="demo-token",
+    )
+    def test_resolve_registry_auth_id_retries_with_slimmer_payload_on_extra_keys_error(self):
+        with patch(
+            "apps.utils.runpod_pods._request_json",
+            side_effect=[
+                {"items": []},
+                runpod_pods.RunPodValidationError("Extra input keys provided in request body"),
+                {"id": "reg-3"},
+            ],
+        ) as request_mock:
+            registry_auth_id = runpod_pods._resolve_registry_auth_id()
+
+        self.assertEqual(registry_auth_id, "reg-3")
+        self.assertEqual(request_mock.call_count, 3)
+
+        _, first_post_kwargs = request_mock.call_args_list[1]
+        _, second_post_kwargs = request_mock.call_args_list[2]
+
+        first_payload = first_post_kwargs.get("body") or {}
+        second_payload = second_post_kwargs.get("body") or {}
+
+        self.assertIn("isDefault", first_payload)
+        self.assertNotIn("isDefault", second_payload)
+        self.assertEqual(second_payload.get("name"), "custom-ghcr-auth")

@@ -600,19 +600,51 @@ def _resolve_registry_auth_id() -> str | None:
             if existing:
                 return existing
 
-    created = _request_json(
-        "POST",
-        "/containerregistryauth",
-        body={
+    create_payload_candidates = [
+        {
             "name": auth_name,
             "username": username,
             "password": token,
             "registry": "ghcr.io",
             "isDefault": False,
         },
-        expected_statuses={200, 201},
-        require_auth=True,
-    )
+        {
+            "name": auth_name,
+            "username": username,
+            "password": token,
+            "registry": "ghcr.io",
+        },
+        {
+            "name": auth_name,
+            "username": username,
+            "password": token,
+        },
+    ]
+
+    created: dict[str, Any] | list[Any] | None = None
+    last_validation_error: RunPodValidationError | None = None
+    for payload in create_payload_candidates:
+        try:
+            created = _request_json(
+                "POST",
+                "/containerregistryauth",
+                body=payload,
+                expected_statuses={200, 201},
+                require_auth=True,
+            )
+            break
+        except RunPodValidationError as exc:
+            message = str(exc).lower()
+            # RunPod's registry-auth schema differs across versions/accounts.
+            # Retry with slimmer payload variants only for schema-shape errors.
+            if "extra input keys" in message or "missing property" in message:
+                last_validation_error = exc
+                continue
+            raise
+
+    if created is None and last_validation_error is not None:
+        raise last_validation_error
+
     created_item = _extract_pod_payload(created)
     created_id = _first_non_empty(created_item, ("id", "containerRegistryAuthId"))
     if not created_id:
