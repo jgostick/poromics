@@ -213,3 +213,42 @@ class RunPodPodServiceTests(SimpleTestCase):
 
         self.assertEqual(payload, {"pods": []})
         self.assertEqual(req.call_count, 2)
+
+    @override_settings(
+        RUNPOD_REGISTRY_AUTH_ID="",
+        RUNPOD_REGISTRY_USERNAME="demo-user",
+        RUNPOD_REGISTRY_PAT="demo-token",
+    )
+    def test_resolve_registry_auth_id_creates_with_required_name_field(self):
+        with patch(
+            "apps.utils.runpod_pods._request_json",
+            side_effect=[{"items": []}, {"id": "reg-1"}],
+        ) as request_mock:
+            registry_auth_id = runpod_pods._resolve_registry_auth_id()
+
+        self.assertEqual(registry_auth_id, "reg-1")
+        self.assertEqual(request_mock.call_count, 2)
+
+        _, second_call_kwargs = request_mock.call_args_list[1]
+        body = second_call_kwargs.get("body") or {}
+        self.assertEqual(body.get("name"), "ghcr-demo-user")
+        self.assertEqual(body.get("username"), "demo-user")
+        self.assertEqual(body.get("registry"), "ghcr.io")
+
+    @override_settings(
+        RUNPOD_REGISTRY_AUTH_ID="",
+        RUNPOD_REGISTRY_AUTH_NAME="custom-ghcr-auth",
+        RUNPOD_REGISTRY_USERNAME="demo-user",
+        RUNPOD_REGISTRY_PAT="demo-token",
+    )
+    def test_resolve_registry_auth_id_uses_configured_registry_auth_name(self):
+        with patch(
+            "apps.utils.runpod_pods._request_json",
+            side_effect=[{"items": []}, {"id": "reg-2"}],
+        ) as request_mock:
+            registry_auth_id = runpod_pods._resolve_registry_auth_id()
+
+        self.assertEqual(registry_auth_id, "reg-2")
+        _, second_call_kwargs = request_mock.call_args_list[1]
+        body = second_call_kwargs.get("body") or {}
+        self.assertEqual(body.get("name"), "custom-ghcr-auth")

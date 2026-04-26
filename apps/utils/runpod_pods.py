@@ -576,6 +576,13 @@ def _resolve_registry_auth_id() -> str | None:
     if not username or not token:
         return None
 
+    configured_name = str(getattr(settings, "RUNPOD_REGISTRY_AUTH_NAME", "") or "").strip()
+    if configured_name:
+        auth_name = configured_name
+    else:
+        slug = re.sub(r"[^A-Za-z0-9._-]+", "-", username).strip("-")
+        auth_name = f"ghcr-{slug}" if slug else "ghcr-registry-auth"
+
     listing = _request_json("GET", "/containerregistryauth", expected_statuses={200}, require_auth=True)
     items: list[dict[str, Any]] = []
     if isinstance(listing, list):
@@ -586,7 +593,9 @@ def _resolve_registry_auth_id() -> str | None:
             items = [item for item in maybe if isinstance(item, dict)]
 
     for item in items:
-        if _first_non_empty(item, ("username", "userName")) == username:
+        item_username = _first_non_empty(item, ("username", "userName"))
+        item_name = _first_non_empty(item, ("name",))
+        if item_username == username or item_name == auth_name:
             existing = _first_non_empty(item, ("id", "containerRegistryAuthId"))
             if existing:
                 return existing
@@ -595,6 +604,7 @@ def _resolve_registry_auth_id() -> str | None:
         "POST",
         "/containerregistryauth",
         body={
+            "name": auth_name,
             "username": username,
             "password": token,
             "registry": "ghcr.io",
