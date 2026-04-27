@@ -146,7 +146,7 @@
               {% if pod.mapping %}
                 <div class="mb-2 text-xs">
                   <div><span class="font-semibold">{{ pod.mapping.queue_name }}</span></div>
-                  <div class="opacity-70 truncate">{{ pod.mapping.endpoint_url }}</div>
+                  <div class="opacity-70 truncate" title="Endpoint URL (or Serverless Endpoint ID)">{{ pod.mapping.endpoint_url }}</div>
                 </div>
               {% else %}
                 <div class="mb-2 text-xs opacity-70">{% translate "Not mapped" %}</div>

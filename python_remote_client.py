@@ -13,7 +13,6 @@ import numpy as np
 
 log = logging.getLogger(__name__)
 
-HEALTH_TIMEOUT_SECONDS = float(os.environ.get("PYTHON_REMOTE_HEALTH_TIMEOUT_SECONDS", "15.0"))
 REQUEST_TIMEOUT_SECONDS = float(os.environ.get("PYTHON_REMOTE_REQUEST_TIMEOUT_SECONDS", "60.0"))
 POLL_TIMEOUT_SECONDS = float(os.environ.get("PYTHON_REMOTE_POLL_TIMEOUT_SECONDS", "60.0"))
 DELETE_TIMEOUT_SECONDS = float(os.environ.get("PYTHON_REMOTE_DELETE_TIMEOUT_SECONDS", "10.0"))
@@ -21,17 +20,6 @@ DELETE_TIMEOUT_SECONDS = float(os.environ.get("PYTHON_REMOTE_DELETE_TIMEOUT_SECO
 
 def _normalize_endpoint(endpoint_url: str | None) -> str:
     return (endpoint_url or "").strip().rstrip("/")
-
-
-def _server_healthy(endpoint_url: str | None) -> bool:
-    endpoint = _normalize_endpoint(endpoint_url)
-    if not endpoint:
-        return False
-    try:
-        response = httpx.get(f"{endpoint}/health", timeout=HEALTH_TIMEOUT_SECONDS)
-        return response.status_code == 200
-    except Exception:
-        return False
 
 
 def encode_array(arr: np.ndarray) -> str:

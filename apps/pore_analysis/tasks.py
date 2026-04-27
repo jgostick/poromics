@@ -12,8 +12,7 @@ from django.utils import timezone
 
 from .analysis.pricing import refund_job_charge
 from .models import AnalysisJob, AnalysisResult, JobStatus
-from .queue_catalog import get_queue_endpoint
-from .runpod_orchestration import maybe_ensure_runpod_pod
+from .queue_catalog import get_queue_backend, get_queue_endpoint
 
 log = logging.getLogger(__name__)
 
@@ -93,6 +92,22 @@ def _resolve_endpoint_for_job(job: AnalysisJob, queue_name: str, *, compute: str
     return _resolve_cpu_endpoint(queue_name)
 
 
+def _is_serverless_queue(queue_name: str) -> bool:
+    """Return True if *queue_name* uses the RunPod Serverless path."""
+    try:
+        return get_queue_backend(queue_name) == "serverless"
+    except Exception:
+        return False
+
+
+def _is_runpod_pod_queue(queue_name: str) -> bool:
+    """Return True if *queue_name* uses the ephemeral RunPod pod path."""
+    try:
+        return get_queue_backend(queue_name) == "runpod-gpu"
+    except Exception:
+        return False
+
+
 @shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 1})
 def run_permeability_job(self, job_id):
     job = AnalysisJob.objects.select_related("image").get(id=job_id)
@@ -105,42 +120,74 @@ def run_permeability_job(self, job_id):
 
     try:
         queue_name = _get_task_queue_name(self.request, default_queue="kabs-cpu")
-        endpoint_url = _resolve_endpoint_for_job(job, queue_name, compute="taichi")
 
-        maybe_ensure_runpod_pod(
-            queue_name=queue_name,
-            analysis_type="permeability",
-            endpoint_url=endpoint_url,
-        )
+        if _is_serverless_queue(queue_name):
+            # --- RunPod Serverless path ---
+            # RunPod manages worker lifecycle; no pod creation or endpoint URL needed here.
+            from .runpod_serverless_client import run_permeability_serverless
 
-        if endpoint_url:
-            from taichi_client import _server_healthy as _taichi_server_healthy
+            with job.image.file.open("rb") as f:
+                arr = np.load(f, allow_pickle=False)
 
-            if not _taichi_server_healthy(endpoint_url):
-                log.warning(
-                    "Taichi health check failed for queue '%s' at %s; proceeding with submit/poll path",
-                    queue_name,
-                    endpoint_url,
+            job.progress_percentage = 20
+            job.save(update_fields=["progress_percentage", "updated_at"])
+
+            solution = run_permeability_serverless(
+                queue_name=queue_name,
+                image_array=arr,
+                direction=job.parameters["direction"],
+                max_iterations=job.parameters["max_iterations"],
+                tolerance=job.parameters["tolerance"],
+                backend=job.parameters["backend"],
+                voxel_size=float(job.image.voxel_size or 1.0),
+            )
+
+        elif _is_runpod_pod_queue(queue_name):
+            # --- Ephemeral RunPod pod path ---
+            # Create a fresh pod, run the job, terminate the pod immediately afterwards.
+            from .runpod_orchestration import create_ephemeral_pod, terminate_ephemeral_pod
+
+            pod_id, endpoint_url = create_ephemeral_pod(queue_name)
+            try:
+                with job.image.file.open("rb") as f:
+                    arr = np.load(f, allow_pickle=False)
+
+                job.progress_percentage = 20
+                job.save(update_fields=["progress_percentage", "updated_at"])
+
+                from .analysis.permeability import run_kabs_permeability
+
+                solution = run_kabs_permeability(
+                    image_array=arr,
+                    direction=job.parameters["direction"],
+                    max_iterations=job.parameters["max_iterations"],
+                    tolerance=job.parameters["tolerance"],
+                    backend=job.parameters["backend"],
+                    voxel_size=float(job.image.voxel_size or 1.0),
+                    endpoint_url=endpoint_url,
                 )
+            finally:
+                terminate_ephemeral_pod(pod_id)
 
-        with job.image.file.open("rb") as f:
-            arr = np.load(f, allow_pickle=False)
+        else:
+            # --- Local / CPU path ---
+            with job.image.file.open("rb") as f:
+                arr = np.load(f, allow_pickle=False)
 
-        job.progress_percentage = 20
-        job.save(update_fields=["progress_percentage", "updated_at"])
+            job.progress_percentage = 20
+            job.save(update_fields=["progress_percentage", "updated_at"])
 
-        # Keep kabs call in a dedicated analysis module
-        from .analysis.permeability import run_kabs_permeability
+            from .analysis.permeability import run_kabs_permeability
 
-        solution = run_kabs_permeability(
-            image_array=arr,
-            direction=job.parameters["direction"],
-            max_iterations=job.parameters["max_iterations"],
-            tolerance=job.parameters["tolerance"],
-            backend=job.parameters["backend"],
-            voxel_size=float(job.image.voxel_size or 1.0),
-            endpoint_url=endpoint_url or None,
-        )
+            solution = run_kabs_permeability(
+                image_array=arr,
+                direction=job.parameters["direction"],
+                max_iterations=job.parameters["max_iterations"],
+                tolerance=job.parameters["tolerance"],
+                backend=job.parameters["backend"],
+                voxel_size=float(job.image.voxel_size or 1.0),
+                endpoint_url=None,
+            )
 
         job.progress_percentage = 90
         job.save(update_fields=["progress_percentage", "updated_at"])
@@ -199,6 +246,8 @@ def run_diffusivity_job(self, job_id):
         endpoint_url = _resolve_endpoint_for_job(job, queue_name, compute="julia")
 
         # Verify the Julia service is reachable before loading the array.
+        # Julia runs as a persistent always-on server; checking reachability is a
+        # meaningful pre-flight guard before charging the user.
         from julia_client import _server_healthy
 
         if not _server_healthy(endpoint_url):
@@ -257,21 +306,6 @@ def run_poresize_job(self, job_id):
         queue_name = _get_task_queue_name(self.request, default_queue="basic-cpu")
         endpoint_url = _resolve_endpoint_for_job(job, queue_name, compute="cpu")
 
-        maybe_ensure_runpod_pod(
-            queue_name=queue_name,
-            analysis_type="poresize",
-            endpoint_url=endpoint_url,
-        )
-
-        if endpoint_url:
-            from python_remote_client import _server_healthy as _python_server_healthy
-
-            if not _python_server_healthy(endpoint_url):
-                log.warning(
-                    "Python remote health check failed for queue '%s' at %s; proceeding with submit/poll path",
-                    queue_name,
-                    endpoint_url,
-                )
         with job.image.file.open("rb") as f:
             arr = np.load(f, allow_pickle=False)
 
@@ -325,22 +359,6 @@ def run_network_extraction_job(self, job_id):
     try:
         queue_name = _get_task_queue_name(self.request, default_queue="network-cpu")
         endpoint_url = _resolve_endpoint_for_job(job, queue_name, compute="cpu")
-
-        maybe_ensure_runpod_pod(
-            queue_name=queue_name,
-            analysis_type="network_extraction",
-            endpoint_url=endpoint_url,
-        )
-
-        if endpoint_url:
-            from python_remote_client import _server_healthy as _python_server_healthy
-
-            if not _python_server_healthy(endpoint_url):
-                log.warning(
-                    "Python remote health check failed for queue '%s' at %s; proceeding with submit/poll path",
-                    queue_name,
-                    endpoint_url,
-                )
 
         with job.image.file.open("rb") as f:
             arr = np.load(f, allow_pickle=False)
@@ -456,3 +474,24 @@ def run_network_validation_job(self, job_id):
         log.exception("Network validation job %s failed", job_id)
         _fail_job_with_refund(job, exc)
         raise
+
+
+@shared_task(bind=True)
+def cleanup_orphaned_ephemeral_pods(self):
+    """Periodic Celery Beat task: terminate RunPod ephemeral pods that have outlived
+    RUNPOD_POD_MAX_AGE_SECONDS (default 3600s / 1 hour).
+
+    Protects against pods left running when a worker is killed before the finally block
+    in run_permeability_job can call terminate_ephemeral_pod().
+
+    Schedule this task via django-celery-beat or SCHEDULED_TASKS in settings.
+    """
+    from .runpod_orchestration import terminate_orphaned_ephemeral_pods
+
+    try:
+        count = terminate_orphaned_ephemeral_pods()
+        log.info("Orphaned ephemeral pod cleanup: terminated %d pod(s)", count)
+        return {"terminated": count}
+    except Exception as exc:
+        log.exception("Orphaned ephemeral pod cleanup failed: %s", exc)
+        return {"terminated": 0, "error": str(exc)}

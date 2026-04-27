@@ -27,15 +27,20 @@
 - Default endpoint: `TAICHI_DEFAULT_SERVER_URL`
 - Queue endpoint overrides: `TAICHI_QUEUE_ENDPOINTS`
 
-Routing intent:
+Taichi permeability has three execution paths selected by `backend_key` in `config/queues.yaml`:
 
-- Keep queue names stable.
-- Switch local vs remote execution by endpoint config.
+| Queue | `backend_key` | Behavior |
+|---|---|---|
+| `kabs-cpu` | `cpu` | Local in-process Taichi |
+| `taichi-runpod-pod` | `runpod-gpu` | Ephemeral RunPod pod (created fresh per job, terminated after) |
+| `taichi-runpod-serverless` | `serverless` | RunPod Serverless endpoint |
+
+Routing intent: keep queue names stable; switch local vs remote execution by `backend_key` and endpoint config.
 
 ## Remote Service Health
 
-- Julia path currently enforces endpoint reachability in diffusivity task.
-- Taichi path warns on health check failure and still attempts remote submit/poll.
+- Julia path enforces endpoint reachability before each diffusivity job (persistent server — meaningful preflight guard).
+- Taichi pod and serverless paths do not perform a pre-flight health check; RunPod manages availability.
 
 ## Safety and Environment
 
@@ -44,15 +49,15 @@ Routing intent:
 
 ## Troubleshooting Checklist
 
-1. Verify queue->endpoint env vars loaded in app process.
-2. Confirm remote `/health` endpoint from the machine running workers.
+1. Verify queue->endpoint env vars are loaded in the app process.
+2. Confirm remote `/health` endpoint is reachable from the machine running workers (Julia only).
 3. Confirm worker is bound to the expected queue.
 4. Inspect `AnalysisJob.parameters` for routing metadata.
 5. Check refund/failure flow when remote execution fails.
 
 ## RunPod Pod Controls (Site Admin)
 
-Site Admin now includes a Pods tab for superusers at `/dashboard/site-admin/pods/`.
+Site Admin includes a Pods tab for superusers at `/dashboard/site-admin/pods/`.
 
 Supported actions:
 
@@ -62,7 +67,7 @@ Supported actions:
 - Resume pod (`start`)
 - Terminate pod (`delete`)
 
-The dashboard does not call RunPod directly. It uses the shared service module in `apps/utils/runpod_pods.py`.
+The dashboard uses the shared service module in `apps/utils/runpod_pods.py`.
 
 ### Required Settings
 
@@ -86,7 +91,7 @@ Timeout/retry knobs:
 
 ### Shared Service Contract (Dashboard and Workers)
 
-The reusable API for callers is:
+The reusable API in `apps/utils/runpod_pods.py`:
 
 - `list_pods()`
 - `get_creation_options(force_refresh=False)`
@@ -94,12 +99,6 @@ The reusable API for callers is:
 - `pause_pod(pod_id)`
 - `resume_pod(pod_id)`
 - `terminate_pod(pod_id)`
-
-Programmatic helper wrappers for future worker orchestration are also provided:
-
-- `ensure_pod_exists(spec, idempotency_key=None)`
-- `pause_idle_pod(pod_id)`
-- `terminate_broken_pod(pod_id)`
 
 Typed exceptions for normalized error handling:
 
@@ -111,56 +110,74 @@ Typed exceptions for normalized error handling:
 - `RunPodNotFoundError`
 - `RunPodAPIError`
 
-### Current Celery Integration Seam
+## RunPod Ephemeral Pod Orchestration (`taichi-runpod-pod`)
 
-`apps/pore_analysis/runpod_orchestration.py` now supports worker-side pod wake-up before remote dispatch.
-
-Current scope:
-
-- Wake behavior is enabled by settings.
-- Queue-to-pod mapping is explicit (queue name -> RunPod pod id).
-- Permeability tasks call this hook before Taichi health/submit when endpoint routing is remote.
-- Pause/terminate automation remains disabled (wake-only behavior).
-
-Required worker settings:
-
-- `RUNPOD_WORKER_WAKE_ENABLED` (`true` or `false`)
-- `RUNPOD_QUEUE_POD_IDS` (`queue=pod-id` pairs, comma-separated)
-- `RUNPOD_WAKE_TIMEOUT_SECONDS` (default `300`)
-- `RUNPOD_WAKE_POLL_INTERVAL_SECONDS` (default `5`)
-
-Example:
-
-```bash
-RUNPOD_WORKER_WAKE_ENABLED=true
-RUNPOD_QUEUE_POD_IDS=taichi-runpod=abc123podid
-RUNPOD_WAKE_TIMEOUT_SECONDS=300
-RUNPOD_WAKE_POLL_INTERVAL_SECONDS=5
-```
-
-Notes:
-
-- If wake is disabled, queue mapping is missing, or endpoint routing is blank, the hook returns immediately.
-- If pod wake does not reach `RUNNING` before timeout, task execution fails and follows existing retry/refund behavior.
-
-### Runtime Queue Mapping from Dashboard (Non-Production)
-
-Superusers can now map a RunPod pod to a RunPod queue from `/dashboard/site-admin/pods/`.
+`apps/pore_analysis/runpod_orchestration.py` manages ephemeral pod lifecycle for the `taichi-runpod-pod` queue.
 
 Behavior:
 
-- Mapping stores queue + pod_id + endpoint_url in a database runtime override table.
-- New jobs pick up runtime endpoint overrides without service restart.
-- Worker wake-up resolves queue->pod_id from runtime mapping first, then `RUNPOD_QUEUE_POD_IDS` fallback.
-- One queue maps to one pod and one pod maps to one queue.
+- `create_ephemeral_pod(queue_name)` creates a fresh pod from `RUNPOD_POD_QUEUE_SPECS` and waits for it to be healthy.
+- `terminate_ephemeral_pod(pod_id)` terminates the pod immediately after the job completes (called in a `finally` block).
+- Pods are named with the prefix `taichi-ephemeral-` for orphan detection.
 
-Precedence for endpoint routing:
+### Required Worker Settings
+
+- `RUNPOD_POD_QUEUE_SPECS`: JSON dict mapping queue name to pod spec, e.g.:
+  ```json
+  {"taichi-runpod-pod": {"image_name": "myregistry/taichi-worker:latest", "gpu_type_id": "NVIDIA GeForce RTX 3090", "cloud_type": "SECURE"}}
+  ```
+- `RUNPOD_POD_TAICHI_PORT`: port the Taichi HTTP server listens on inside the pod (default `8888`)
+- `RUNPOD_POD_STARTUP_TIMEOUT_SECONDS`: how long to wait for pod health before failing (default `300`)
+- `RUNPOD_POD_STARTUP_POLL_INTERVAL_SECONDS`: health poll interval during startup (default `5`)
+- `RUNPOD_POD_MAX_AGE_SECONDS`: pods older than this are treated as orphaned (default `3600`)
+
+### Orphaned Pod Cleanup
+
+A Celery Beat task `cleanup_orphaned_ephemeral_pods` periodically scans for and terminates pods that:
+
+1. Have names starting with `taichi-ephemeral-`
+2. Are older than `RUNPOD_POD_MAX_AGE_SECONDS`
+
+Schedule this task via `django-celery-beat` or `SCHEDULED_TASKS` in settings. Recommended interval: every 30 minutes.
+
+## RunPod Serverless (`taichi-runpod-serverless`)
+
+`apps/utils/runpod_serverless.py` is the REST client for the RunPod Serverless API.
+`apps/pore_analysis/runpod_serverless_client.py` is the task-layer adapter.
+`taichi_serverless_handler.py` (repo root) is the handler deployed to RunPod.
+
+### Required Worker Settings
+
+- `RUNPOD_SERVERLESS_API_BASE_URL`: RunPod Serverless API base (default `https://api.runpod.ai/v2`)
+- `RUNPOD_SERVERLESS_QUEUE_ENDPOINT_IDS`: JSON dict mapping queue name to endpoint ID, e.g.:
+  ```json
+  {"taichi-runpod-serverless": "abc123endpointid"}
+  ```
+- `RUNPOD_SERVERLESS_JOB_TIMEOUT_SECONDS`: max polling duration (default `600`)
+- `RUNPOD_SERVERLESS_POLL_INTERVAL_SECONDS`: poll interval (default `5`)
+
+Endpoint ID resolution order:
+
+1. `RunPodQueueMapping.endpoint_url` (DB, set via `/dashboard/site-admin/pods/`)
+2. `RUNPOD_SERVERLESS_QUEUE_ENDPOINT_IDS` settings dict
+
+### Deploying the Serverless Handler
+
+Build and push a Docker image containing `taichi_serverless_handler.py` and its dependencies.
+Deploy as a RunPod Serverless endpoint. Set the resulting endpoint ID in `RUNPOD_SERVERLESS_QUEUE_ENDPOINT_IDS`.
+
+## Runtime Queue Mapping from Dashboard
+
+Superusers can map a RunPod pod or serverless endpoint to a queue from `/dashboard/site-admin/pods/`.
+
+- For pod-type queues: stores queue + pod_id + endpoint URL.
+- For serverless queues: stores queue + endpoint_id in the `endpoint_url` field.
+- New jobs pick up runtime overrides without service restart.
+- One queue maps to one mapping record.
+
+Endpoint routing precedence:
 
 1. Runtime DB mapping (`RunPodQueueMapping.endpoint_url`)
 2. Settings queue endpoint overrides (`*_QUEUE_ENDPOINTS`)
 3. Queue catalog YAML endpoint (`config/queues.yaml`)
 4. Default endpoint argument passed by caller
-
-Operational note:
-
-- This feature is intended for operator convenience in non-production workflows.

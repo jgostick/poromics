@@ -31,6 +31,14 @@ Configured in `poromics/settings.py`:
 
 If `TAICHI_DEFAULT_SERVER_URL` is set, queues without explicit overrides inherit it.
 
+Taichi permeability supports three execution paths, selected by the `backend_key` of the dispatched queue:
+
+| `backend_key` | Queue name | Behavior |
+|---|---|---|
+| `cpu` / (default) | `kabs-cpu` | In-process Taichi (local) |
+| `runpod-gpu` | `taichi-runpod-pod` | Ephemeral RunPod pod — created fresh per job, terminated after |
+| `serverless` | `taichi-runpod-serverless` | RunPod Serverless — endpoint managed by RunPod |
+
 ### Generic Python remote (pore-size and future CPU remote analyses)
 
 Configured in `poromics/settings.py`:
@@ -46,13 +54,15 @@ without changing queue names.
 In `apps/pore_analysis/tasks.py`:
 
 1. Resolve queue name from Celery task request delivery metadata.
-2. Resolve endpoint for queue from settings.
-3. Pass `endpoint_url` into the corresponding analysis module call.
+2. Check queue `backend_key` via `_is_serverless_queue` / `_is_runpod_pod_queue`.
+3. Execute on the matching path (serverless, ephemeral pod, or local).
 4. Persist result and job lifecycle updates.
 
 Functions involved:
 
 - `_get_task_queue_name`
+- `_is_serverless_queue`
+- `_is_runpod_pod_queue`
 - `_resolve_julia_endpoint`
 - `_resolve_taichi_endpoint`
 
@@ -67,35 +77,57 @@ Endpoint precedence for `get_queue_endpoint`:
 
 ### Julia
 
-- Diffusivity task currently enforces Julia health check before processing input.
+- Diffusivity task enforces a Julia health check before processing input.
 - Failure to reach endpoint raises runtime error and triggers failure/refund flow.
+- Julia runs as a persistent always-on server; the health check is intentional.
 
-### Taichi
+### Taichi — Local / CPU
 
-- If endpoint is configured, task checks health and logs warning on failure, then still attempts submit/poll path.
-- If endpoint is blank/unconfigured, analysis uses local in-process path.
+- If endpoint is blank/unconfigured, analysis uses local in-process Taichi path.
 
-#### Worker-driven RunPod wake-up (taichi-runpod)
+### Taichi — Ephemeral RunPod Pod (`taichi-runpod-pod`)
 
-- Permeability task flow now calls `maybe_ensure_runpod_pod` before Taichi remote health and submit.
-- Wake behavior is settings-gated and queue-mapped:
-	- `RUNPOD_WORKER_WAKE_ENABLED`
-	- `RUNPOD_QUEUE_POD_IDS` (`queue=pod-id` pairs)
-	- `RUNPOD_WAKE_TIMEOUT_SECONDS`
-	- `RUNPOD_WAKE_POLL_INTERVAL_SECONDS`
-- For mapped queues with remote endpoint routing, workers:
-	1. inspect pod status,
-	2. request pod start when needed,
-	3. poll until `RUNNING` or timeout,
-	4. then proceed with existing Taichi submit/poll logic.
-- Current implementation is wake-only. Idle pause and terminate automation are intentionally out of scope.
-- Queue-to-pod mapping precedence is runtime DB mapping first, then `RUNPOD_QUEUE_POD_IDS` settings fallback.
+- Worker creates a **fresh pod** via `create_ephemeral_pod(queue_name)` at job start.
+- Pod spec is resolved from `RUNPOD_POD_QUEUE_SPECS` (settings) keyed by queue name.
+- Pod URL format: `https://{pod_id}-{port}.proxy.runpod.net`
+- After computation, `terminate_ephemeral_pod(pod_id)` is called in a `finally` block to
+  ensure termination even on failure.
+- Pods are named with `EPHEMERAL_POD_NAME_PREFIX = "taichi-ephemeral-"` for orphan detection.
+- Relevant settings in `poromics/settings.py`:
+  - `RUNPOD_POD_QUEUE_SPECS`: per-queue pod spec dicts (image, GPU type, etc.)
+  - `RUNPOD_POD_TAICHI_PORT`: HTTP port exposed by Taichi server on the pod
+  - `RUNPOD_POD_STARTUP_TIMEOUT_SECONDS`: how long to wait for pod to become healthy
+  - `RUNPOD_POD_STARTUP_POLL_INTERVAL_SECONDS`: health poll interval during startup
+  - `RUNPOD_POD_MAX_AGE_SECONDS`: max pod age for orphaned-pod cleanup (default 3600)
 
-#### Runtime mapping UI (non-production convenience)
+#### Orphaned pod cleanup
 
-- Superusers can map pod->queue from `/dashboard/site-admin/pods/`.
-- Mapping updates both endpoint and pod assignment together.
-- Supported scope is RunPod-named queues (for example `taichi-runpod`, `poresize-runpod`, `extraction-runpod`).
+A Celery Beat task `cleanup_orphaned_ephemeral_pods` periodically calls
+`terminate_orphaned_ephemeral_pods()` from `apps/pore_analysis/runpod_orchestration.py`.
+It terminates any pod whose name starts with `taichi-ephemeral-` and whose age exceeds
+`RUNPOD_POD_MAX_AGE_SECONDS`. This guards against pods left running when a worker is killed
+before the `finally` block executes.
+
+### Taichi — RunPod Serverless (`taichi-runpod-serverless`)
+
+- RunPod manages worker lifecycle entirely; no pod creation or endpoint URL is needed.
+- Task delegates to `run_permeability_serverless(...)` in `apps/pore_analysis/runpod_serverless_client.py`.
+- Endpoint ID is resolved from:
+  1. `RunPodQueueMapping.endpoint_url` (DB, keyed by queue name)
+  2. `RUNPOD_SERVERLESS_QUEUE_ENDPOINT_IDS` settings dict
+- The REST client lives in `apps/utils/runpod_serverless.py` (submit → poll → result).
+- The serverless handler deployed to RunPod is `taichi_serverless_handler.py` (repo root).
+- Relevant settings:
+  - `RUNPOD_SERVERLESS_API_BASE_URL`: base URL for RunPod Serverless REST API
+  - `RUNPOD_SERVERLESS_QUEUE_ENDPOINT_IDS`: `{queue_name: endpoint_id}` dict
+  - `RUNPOD_SERVERLESS_JOB_TIMEOUT_SECONDS`: max polling duration
+  - `RUNPOD_SERVERLESS_POLL_INTERVAL_SECONDS`: poll interval
+
+#### Runtime mapping UI
+
+- Superusers can update `RunPodQueueMapping` from `/dashboard/site-admin/pods/`.
+- For serverless queues the `endpoint_url` column stores the RunPod endpoint ID.
+- Supported scope is RunPod-named queues (for example `taichi-runpod-pod`, `taichi-runpod-serverless`).
 
 ## Service Interfaces
 
@@ -103,18 +135,21 @@ Remote clients:
 
 - `julia_client.py`
 - `taichi_client.py`
+- `apps/utils/runpod_serverless.py`
 
 Remote servers:
 
 - `julia_server.jl`
-- `taichi_server.py`
+- `taichi_server.py` (pod-based)
+- `taichi_serverless_handler.py` (serverless)
 
-Common pattern:
+Common pod/serverless pattern:
 
-- health check
 - submit job
 - poll status
 - collect result or error
+
+Julia additionally performs a health check before submission (persistent server).
 
 ## Security Posture (Current)
 

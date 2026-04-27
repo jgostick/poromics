@@ -563,10 +563,39 @@ RUNPOD_RETRY_COUNT = env.int("RUNPOD_RETRY_COUNT", default=2)
 RUNPOD_RETRY_BACKOFF_SECONDS = env.float("RUNPOD_RETRY_BACKOFF_SECONDS", default=0.5)
 RUNPOD_OPTIONS_CACHE_TTL_SECONDS = env.int("RUNPOD_OPTIONS_CACHE_TTL_SECONDS", default=900)
 RUNPOD_IDEMPOTENCY_TTL_SECONDS = env.int("RUNPOD_IDEMPOTENCY_TTL_SECONDS", default=600)
-RUNPOD_WORKER_WAKE_ENABLED = env.bool("RUNPOD_WORKER_WAKE_ENABLED", default=False)
-RUNPOD_QUEUE_POD_IDS = _parse_queue_endpoint_pairs(env.list("RUNPOD_QUEUE_POD_IDS", default=[]))
-RUNPOD_WAKE_TIMEOUT_SECONDS = env.float("RUNPOD_WAKE_TIMEOUT_SECONDS", default=300.0)
-RUNPOD_WAKE_POLL_INTERVAL_SECONDS = env.float("RUNPOD_WAKE_POLL_INTERVAL_SECONDS", default=5.0)
+# Ephemeral pod settings: each taichi-runpod-pod job creates a fresh pod and terminates it
+# after use. RUNPOD_POD_QUEUE_SPECS is a JSON object mapping queue_name → pod creation spec
+# dict (fields passed directly to RunPod POST /pods, e.g. imageName, gpuTypeId, cloudType).
+# Example:
+#   RUNPOD_POD_QUEUE_SPECS={"taichi-runpod-pod": {"name": "taichi-ephemeral",
+#       "imageName": "...", "gpuTypeId": "NVIDIA GeForce RTX 3090", "cloudType": "SECURE"}}
+import json as _json
+
+RUNPOD_POD_QUEUE_SPECS: dict[str, dict] = _json.loads(env("RUNPOD_POD_QUEUE_SPECS", default="{}"))
+
+# Internal port that taichi_server.py listens on inside the container.
+# Used to build the RunPod proxy URL: https://{pod_id}-{port}.proxy.runpod.net
+RUNPOD_POD_TAICHI_PORT = env.int("RUNPOD_POD_TAICHI_PORT", default=3000)
+
+# How long to wait for a freshly created pod to reach RUNNING before failing the task.
+RUNPOD_POD_STARTUP_TIMEOUT_SECONDS = env.float("RUNPOD_POD_STARTUP_TIMEOUT_SECONDS", default=300.0)
+RUNPOD_POD_STARTUP_POLL_INTERVAL_SECONDS = env.float("RUNPOD_POD_STARTUP_POLL_INTERVAL_SECONDS", default=5.0)
+
+# Maximum age (seconds) a taichi-ephemeral pod may run before the cleanup Beat task
+# treats it as orphaned and terminates it.
+RUNPOD_POD_MAX_AGE_SECONDS = env.float("RUNPOD_POD_MAX_AGE_SECONDS", default=3600.0)
+
+# RunPod Serverless routing (taichi-runpod-serverless queue).
+# Base URL for the Serverless REST API (different from the pod REST API).
+RUNPOD_SERVERLESS_API_BASE_URL = env("RUNPOD_SERVERLESS_API_BASE_URL", default="https://api.runpod.ai/v2")
+# Comma-separated queue=endpoint_id pairs, e.g.
+#   RUNPOD_SERVERLESS_QUEUE_ENDPOINT_IDS=taichi-runpod-serverless=abc123xyz
+RUNPOD_SERVERLESS_QUEUE_ENDPOINT_IDS = _parse_queue_endpoint_pairs(
+    env.list("RUNPOD_SERVERLESS_QUEUE_ENDPOINT_IDS", default=[])
+)
+# How long (seconds) to wait for a serverless job to complete before timing out.
+RUNPOD_SERVERLESS_JOB_TIMEOUT_SECONDS = env.float("RUNPOD_SERVERLESS_JOB_TIMEOUT_SECONDS", default=600.0)
+RUNPOD_SERVERLESS_POLL_INTERVAL_SECONDS = env.float("RUNPOD_SERVERLESS_POLL_INTERVAL_SECONDS", default=5.0)
 
 ANALYSIS_DEFAULT_QUEUE_MAP = dict(QUEUE_CATALOG.get("analysis_defaults", {}))
 

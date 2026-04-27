@@ -11,7 +11,6 @@ import numpy as np
 
 log = logging.getLogger(__name__)
 
-HEALTH_TIMEOUT_SECONDS = float(os.environ.get("TAICHI_HEALTH_TIMEOUT_SECONDS", "15.0"))
 REQUEST_TIMEOUT_SECONDS = float(os.environ.get("TAICHI_REQUEST_TIMEOUT_SECONDS", "60.0"))
 POLL_TIMEOUT_SECONDS = float(os.environ.get("TAICHI_POLL_TIMEOUT_SECONDS", "60.0"))
 DELETE_TIMEOUT_SECONDS = float(os.environ.get("TAICHI_DELETE_TIMEOUT_SECONDS", "10.0"))
@@ -20,17 +19,6 @@ DELETE_TIMEOUT_SECONDS = float(os.environ.get("TAICHI_DELETE_TIMEOUT_SECONDS", "
 def _normalize_endpoint(endpoint_url: str | None) -> str:
     endpoint = (endpoint_url or "").strip().rstrip("/")
     return endpoint
-
-
-def _server_healthy(endpoint_url: str | None) -> bool:
-    endpoint = _normalize_endpoint(endpoint_url)
-    if not endpoint:
-        return False
-    try:
-        response = httpx.get(f"{endpoint}/health", timeout=HEALTH_TIMEOUT_SECONDS)
-        return response.status_code == 200
-    except Exception:
-        return False
 
 
 def _encode_array(arr: np.ndarray) -> str:
