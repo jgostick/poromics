@@ -123,18 +123,16 @@ def run_permeability_job(self, job_id):
 
         if _is_serverless_queue(queue_name):
             # --- RunPod Serverless path ---
-            # RunPod manages worker lifecycle; no pod creation or endpoint URL needed here.
+            # Pass a presigned storage URL so the RunPod worker downloads the image
+            # directly from S3, avoiding RunPod's 10 MiB request body limit.
             from .runpod_serverless_client import run_permeability_serverless
-
-            with job.image.file.open("rb") as f:
-                arr = np.load(f, allow_pickle=False)
 
             job.progress_percentage = 20
             job.save(update_fields=["progress_percentage", "updated_at"])
 
             solution = run_permeability_serverless(
                 queue_name=queue_name,
-                image_array=arr,
+                image_url=job.image.file.url,
                 direction=job.parameters["direction"],
                 max_iterations=job.parameters["max_iterations"],
                 tolerance=job.parameters["tolerance"],

@@ -1,11 +1,11 @@
 """Task-layer adapter for RunPod Serverless permeability jobs.
 
-Resolves the endpoint ID for the taichi-runpod-serverless queue, encodes the image array
-in the same base64-npy format used by taichi_client.py and taichi_serverless_handler.py,
-submits the job, and polls until completion.
+Resolves the endpoint ID for the taichi-runpod-serverless queue, passes a presigned
+storage URL for the image (to avoid RunPod's 10 MiB body limit), submits the job,
+and polls until completion.
 
-Input payload format (matches taichi_server.py and taichi_serverless_handler.py):
-    image_npy_b64:  base64-encoded .npy file (bool array)
+Input payload format (matches taichi_serverless_handler.py):
+    image_url:      presigned S3 URL pointing to the .npy image file
     direction:      "x" | "y" | "z"
     max_iterations: int
     tolerance:      float
@@ -16,11 +16,8 @@ Output (solution dict) format matches taichi_server.py _compute_permeability ret
 """
 from __future__ import annotations
 
-import base64
-import io
 import logging
 
-import numpy as np
 from django.conf import settings
 
 from apps.utils.runpod_pods import RunPodConfigurationError
@@ -62,16 +59,10 @@ def _resolve_serverless_endpoint_id(queue_name: str) -> str:
     )
 
 
-def _encode_array(arr: np.ndarray) -> str:
-    buf = io.BytesIO()
-    np.save(buf, arr.astype(bool))
-    return base64.b64encode(buf.getvalue()).decode("ascii")
-
-
 def run_permeability_serverless(
     *,
     queue_name: str,
-    image_array: np.ndarray,
+    image_url: str,
     direction: str,
     max_iterations: int,
     tolerance: float,
@@ -80,6 +71,9 @@ def run_permeability_serverless(
 ) -> dict:
     """Submit a permeability job to the RunPod Serverless endpoint for *queue_name* and
     block until the result is available.
+
+    The worker downloads the image directly from *image_url* (a presigned S3 URL),
+    bypassing RunPod's 10 MiB request body limit.
 
     Returns the solution dict (same shape as taichi_server.py _compute_permeability output).
 
@@ -91,7 +85,7 @@ def run_permeability_serverless(
     endpoint_id = _resolve_serverless_endpoint_id(queue_name)
 
     payload = {
-        "image_npy_b64": _encode_array(image_array),
+        "image_url": image_url,
         "direction": direction,
         "max_iterations": int(max_iterations),
         "tolerance": float(tolerance),

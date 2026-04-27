@@ -22,6 +22,7 @@ RUN uv pip install --system --no-cache \
     "numpy==2.4.4" \
     "taichi==1.7.4" \
     "kabs @ git+https://github.com/PMEAL/kabs@f4d770da785a63c22b22128b743624af6b7fd639" \
+    "httpx>=0.27" \
     "runpod>=1.7"
 
 COPY taichi_serverless_handler.py ./

@@ -5,7 +5,10 @@ It uses the RunPod Python SDK to receive jobs from the RunPod Serverless platfor
 run kabs permeability computation, and return the result.
 
 Input format (job["input"]):
-    image_npy_b64:  base64-encoded .npy file of a bool array
+    image_url:      presigned URL pointing to the .npy image file (preferred —
+                    avoids RunPod's 10 MiB body limit)
+    image_npy_b64:  base64-encoded .npy file of a bool array (fallback for small
+                    images / local testing)
     direction:      "x" | "y" | "z"
     max_iterations: int
     tolerance:      float
@@ -26,8 +29,8 @@ task layer can handle both pod and serverless results identically.
 Usage (Docker CMD or entrypoint):
     python taichi_serverless_handler.py
 
-Required packages (same as taichi_server.py image, plus runpod):
-    runpod, taichi, kabs, numpy
+Required packages (same as taichi_server.py image, plus runpod and httpx):
+    runpod, taichi, kabs, numpy, httpx
 """
 
 import base64
@@ -70,6 +73,16 @@ def _ensure_taichi_initialized(backend: str) -> None:
         log.info("Taichi initialized (backend=%s)", configured_backend)
 
 
+def _load_image_from_url(url: str) -> np.ndarray:
+    """Download a .npy file from *url* and return it as a numpy array."""
+    import httpx
+
+    with httpx.Client(follow_redirects=True, timeout=120.0) as client:
+        response = client.get(url)
+        response.raise_for_status()
+    return np.load(io.BytesIO(response.content), allow_pickle=False)
+
+
 def _decode_array(encoded_npy: str) -> np.ndarray:
     raw = base64.b64decode(encoded_npy)
     return np.load(io.BytesIO(raw), allow_pickle=False)
@@ -79,7 +92,10 @@ def _compute_permeability(inp: dict) -> dict:
     """Run kabs permeability computation and return the solution dict."""
     from kabs import compute_permeability, solve_flow
 
-    image = _decode_array(str(inp["image_npy_b64"]))
+    if "image_url" in inp:
+        image = _load_image_from_url(str(inp["image_url"]))
+    else:
+        image = _decode_array(str(inp["image_npy_b64"]))
     direction = str(inp["direction"])
     max_iterations = int(inp["max_iterations"])
     tolerance = float(inp["tolerance"])
@@ -122,10 +138,12 @@ def handler(job: dict) -> dict:
     """
     inp = job.get("input") or {}
 
-    required = {"image_npy_b64", "direction", "max_iterations", "tolerance", "backend", "voxel_size"}
+    required = {"direction", "max_iterations", "tolerance", "backend", "voxel_size"}
     missing = sorted(required - set(inp))
     if missing:
         raise ValueError(f"Missing required input fields: {', '.join(missing)}")
+    if "image_url" not in inp and "image_npy_b64" not in inp:
+        raise ValueError("Missing required input: provide either 'image_url' or 'image_npy_b64'.")
 
     log.info(
         "RunPod Serverless job %s: direction=%s, max_iterations=%s, backend=%s",
