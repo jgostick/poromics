@@ -60,8 +60,8 @@ queues:
     pricing:
       default_credits_per_million_voxels: "2.0000"
 
-  - name: taichi-runpod-serverless
-    display_name: taichi-runpod-serverless
+  - name: taichi-serverless-basic
+    display_name: "Permeability — Serverless (Basic GPU)"
     backend_key: serverless
     compute_system: taichi
     analyses:
@@ -70,7 +70,31 @@ queues:
     enabled: true
     capabilities: []
     pricing:
-      default_credits_per_million_voxels: "3.0000"
+      default_credits_per_million_voxels: "2.0000"
+
+  - name: taichi-serverless-standard
+    display_name: "Permeability — Serverless (Standard GPU)"
+    backend_key: serverless
+    compute_system: taichi
+    analyses:
+      - permeability
+    endpoint_url: ""
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "3.5000"
+
+  - name: taichi-serverless-deluxe
+    display_name: "Permeability — Serverless (Deluxe GPU)"
+    backend_key: serverless
+    compute_system: taichi
+    analyses:
+      - permeability
+    endpoint_url: ""
+    enabled: true
+    capabilities: []
+    pricing:
+      default_credits_per_million_voxels: "6.0000"
 
   # - name: kabs-metal
   #   display_name: kabs-metal

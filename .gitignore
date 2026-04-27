@@ -102,3 +102,4 @@ pnpm-debug.log*
 
 .cache/
 ``
+.leankg/leankg.db
