@@ -12,7 +12,7 @@
   <form method="get" class="card bg-base-100 shadow mb-4">
     <input type="hidden" name="sort_by" value="{{ selected_sort_by }}">
     <input type="hidden" name="sort_dir" value="{{ selected_sort_dir }}">
-    <div class="card-body p-4 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+    <div class="card-body p-4 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
       <div>
         <label class="label" for="image_id">
           <span class="label-text">{% translate "Image" %}</span>
@@ -47,6 +47,13 @@
             <option value="{{ type_value }}" {% if selected_analysis_type == type_value %}selected{% endif %}>{{ type_label }}</option>
           {% endfor %}
         </select>
+      </div>
+
+      <div class="flex items-center gap-2 pb-1">
+        <label class="label cursor-pointer gap-2">
+          <input type="checkbox" name="hide_failed" value="1" class="checkbox checkbox-sm" {% if hide_failed %}checked{% endif %}>
+          <span class="label-text">{% translate "Hide failed" %}</span>
+        </label>
       </div>
 
       <div class="flex gap-2">

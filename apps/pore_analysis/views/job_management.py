@@ -20,6 +20,7 @@ def job_list(request, team_slug):
     image_id = (request.GET.get("image_id") or "").strip()
     status = (request.GET.get("status") or "").strip()
     analysis_type = (request.GET.get("analysis_type") or "").strip()
+    hide_failed = request.GET.get("hide_failed") == "1"
     sort_by = (request.GET.get("sort_by") or "created").strip()
     sort_dir = (request.GET.get("sort_dir") or "desc").strip().lower()
 
@@ -51,6 +52,9 @@ def job_list(request, team_slug):
 
     if analysis_type and analysis_type in AnalysisType.values:
         jobs_qs = jobs_qs.filter(analysis_type=analysis_type)
+
+    if hide_failed:
+        jobs_qs = jobs_qs.exclude(status=JobStatus.FAILED)
 
     jobs = list(jobs_qs.order_by(order_field))
 
@@ -84,6 +88,7 @@ def job_list(request, team_slug):
             "image_id": image_id,
             "status": status,
             "analysis_type": analysis_type,
+            "hide_failed": "1" if hide_failed else "",
             "sort_by": sort_by,
             "sort_dir": sort_dir,
         }.items()
@@ -102,6 +107,7 @@ def job_list(request, team_slug):
                 "image_id": image_id,
                 "status": status,
                 "analysis_type": analysis_type,
+                "hide_failed": "1" if hide_failed else "",
                 "sort_by": column_key,
                 "sort_dir": next_dir,
             }.items()
@@ -116,6 +122,7 @@ def job_list(request, team_slug):
         "image_id": image_id,
         "selected_status": status,
         "selected_analysis_type": analysis_type,
+        "hide_failed": hide_failed,
         "selected_sort_by": sort_by,
         "selected_sort_dir": sort_dir,
         "status_choices": JobStatus.choices,
