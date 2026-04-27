@@ -108,8 +108,38 @@ def _is_runpod_pod_queue(queue_name: str) -> bool:
         return False
 
 
-@shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 1})
-def run_permeability_job(self, job_id):
+def _presigned_s3_url(file_field, expiry_seconds: int = 3600) -> str:
+    """Return a boto3 presigned URL for *file_field*, bypassing any custom domain.
+
+    Falls back to the storage URL (unsigned) when S3 is not in use, which is
+    acceptable for local development where RunPod workers are not used.
+    """
+    from django.conf import settings as _settings
+
+    if not getattr(_settings, "USE_S3_MEDIA", False):
+        return file_field.url
+
+    import boto3
+
+    storage = file_field.storage
+    # PublicMediaStorage sets location="media"; combine with file name to get S3 key.
+    location = getattr(storage, "location", "").strip("/")
+    key = f"{location}/{file_field.name}" if location else file_field.name
+
+    client = boto3.client(
+        "s3",
+        aws_access_key_id=_settings.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=_settings.AWS_SECRET_ACCESS_KEY,
+        region_name=getattr(_settings, "AWS_S3_REGION_NAME", None),
+    )
+    return client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": _settings.AWS_STORAGE_BUCKET_NAME, "Key": key},
+        ExpiresIn=expiry_seconds,
+    )
+
+
+
     job = AnalysisJob.objects.select_related("image").get(id=job_id)
 
     job.status = JobStatus.PROCESSING
@@ -132,7 +162,7 @@ def run_permeability_job(self, job_id):
 
             solution = run_permeability_serverless(
                 queue_name=queue_name,
-                image_url=job.image.file.url,
+                image_url=_presigned_s3_url(job.image.file),
                 direction=job.parameters["direction"],
                 max_iterations=job.parameters["max_iterations"],
                 tolerance=job.parameters["tolerance"],
