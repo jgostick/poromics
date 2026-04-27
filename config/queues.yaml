@@ -11,10 +11,20 @@ analysis_defaults:
 # TAICHI_BACKEND=metal uv run celery -A poromics worker -Q taichi-metal -n taichi-metal@%h --pool=solo -l INFO
 # And add the corresponding block below...
 
+# endpoint_type controls how the task is dispatched:
+#   local       — runs in-process on the Celery worker
+#   remote      — calls an always-on HTTP server (Julia, etc.)
+#   runpod-pod  — provisions an ephemeral RunPod GPU pod
+#   serverless  — calls a RunPod Serverless endpoint
+#
+# backend_key is the compute backend passed to the solver (cpu, gpu, metal, cuda, opengl, …).
+# For non-GPU compute systems (julia, network, cpu) it can be "cpu" or "default".
+
 queues:
   - name: kabs-cpu
     display_name: kabs-cpu
     backend_key: cpu
+    endpoint_type: local
     compute_system: taichi
     analyses:
       - permeability
@@ -27,6 +37,7 @@ queues:
   # - name: kabs-gpu
   #   display_name: kabs-gpu
   #   backend_key: gpu
+  #   endpoint_type: local
   #   compute_system: taichi
   #   analyses:
   #     - permeability
@@ -39,6 +50,7 @@ queues:
   # - name: taichi-gpu
   #   display_name: taichi-gpu
   #   backend_key: gpu
+  #   endpoint_type: remote
   #   compute_system: taichi
   #   analyses:
   #     - permeability
@@ -50,7 +62,8 @@ queues:
 
   - name: taichi-runpod-pod
     display_name: taichi-runpod-pod
-    backend_key: runpod-gpu
+    backend_key: gpu
+    endpoint_type: runpod-pod
     compute_system: taichi
     analyses:
       - permeability
@@ -62,7 +75,8 @@ queues:
 
   - name: taichi-serverless-basic
     display_name: "Permeability — Serverless (Basic GPU)"
-    backend_key: serverless
+    backend_key: gpu
+    endpoint_type: serverless
     compute_system: taichi
     analyses:
       - permeability
@@ -74,7 +88,8 @@ queues:
 
   - name: taichi-serverless-standard
     display_name: "Permeability — Serverless (Standard GPU)"
-    backend_key: serverless
+    backend_key: gpu
+    endpoint_type: serverless
     compute_system: taichi
     analyses:
       - permeability
@@ -86,7 +101,8 @@ queues:
 
   - name: taichi-serverless-deluxe
     display_name: "Permeability — Serverless (Deluxe GPU)"
-    backend_key: serverless
+    backend_key: gpu
+    endpoint_type: serverless
     compute_system: taichi
     analyses:
       - permeability
@@ -99,6 +115,7 @@ queues:
   # - name: kabs-metal
   #   display_name: kabs-metal
   #   backend_key: metal
+  #   endpoint_type: local
   #   compute_system: taichi
   #   analyses:
   #     - permeability
@@ -111,6 +128,7 @@ queues:
   # - name: kabs-cuda
   #   display_name: kabs-cuda
   #   backend_key: cuda
+  #   endpoint_type: local
   #   compute_system: taichi
   #   analyses:
   #     - permeability
@@ -123,6 +141,7 @@ queues:
   # - name: kabs-opengl
   #   display_name: kabs-opengl
   #   backend_key: opengl
+  #   endpoint_type: local
   #   compute_system: taichi
   #   analyses:
   #     - permeability
@@ -135,6 +154,7 @@ queues:
   - name: julia-cpu
     display_name: julia-cpu
     backend_key: cpu
+    endpoint_type: remote
     compute_system: julia
     analyses:
       - diffusivity
@@ -147,6 +167,7 @@ queues:
   # - name: julia-gpu
   #   display_name: julia-gpu
   #   backend_key: gpu
+  #   endpoint_type: remote
   #   compute_system: julia
   #   analyses:
   #     - diffusivity
@@ -159,6 +180,7 @@ queues:
   # - name: julia-metal
   #   display_name: julia-metal
   #   backend_key: metal
+  #   endpoint_type: remote
   #   compute_system: julia
   #   analyses:
   #     - diffusivity
@@ -171,6 +193,7 @@ queues:
   # - name: julia-cuda
   #   display_name: julia-cuda
   #   backend_key: cuda
+  #   endpoint_type: remote
   #   compute_system: julia
   #   analyses:
   #     - diffusivity
@@ -183,6 +206,7 @@ queues:
   - name: basic-cpu
     display_name: basic-cpu
     backend_key: default
+    endpoint_type: local
     compute_system: cpu
     analyses:
       - poresize
@@ -194,7 +218,8 @@ queues:
 
   # - name: poresize-remote
   #   display_name: poresize-remote
-  #   backend_key: remote
+  #   backend_key: cpu
+  #   endpoint_type: remote
   #   compute_system: cpu
   #   analyses:
   #     - poresize
@@ -206,7 +231,8 @@ queues:
 
   - name: poresize-runpod
     display_name: poresize-runpod
-    backend_key: remote
+    backend_key: cpu
+    endpoint_type: remote
     compute_system: cpu
     analyses:
       - poresize
@@ -218,7 +244,8 @@ queues:
 
   - name: extraction-runpod
     display_name: extraction-runpod
-    backend_key: remote
+    backend_key: cpu
+    endpoint_type: remote
     compute_system: cpu
     analyses:
       - network_extraction
@@ -231,6 +258,7 @@ queues:
   - name: network-cpu
     display_name: network-cpu
     backend_key: cpu
+    endpoint_type: local
     compute_system: network
     analyses:
       - network_extraction
@@ -243,6 +271,7 @@ queues:
   # - name: network-parallel
   #   display_name: network-parallel
   #   backend_key: parallel
+  #   endpoint_type: local
   #   compute_system: network
   #   analyses:
   #     - network_extraction
@@ -256,6 +285,7 @@ queues:
   - name: network-validation
     display_name: network-validation
     backend_key: default
+    endpoint_type: local
     compute_system: network
     analyses:
       - network_validation

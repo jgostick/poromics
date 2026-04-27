@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from .analysis.pricing import refund_job_charge
 from .models import AnalysisJob, AnalysisResult, JobStatus
-from .queue_catalog import get_queue_backend, get_queue_endpoint
+from .queue_catalog import get_queue_backend, get_queue_endpoint, get_queue_endpoint_type
 
 log = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ def _resolve_endpoint_for_job(job: AnalysisJob, queue_name: str, *, compute: str
 def _is_serverless_queue(queue_name: str) -> bool:
     """Return True if *queue_name* uses the RunPod Serverless path."""
     try:
-        return get_queue_backend(queue_name) == "serverless"
+        return get_queue_endpoint_type(queue_name) == "serverless"
     except Exception:
         return False
 
@@ -103,7 +103,7 @@ def _is_serverless_queue(queue_name: str) -> bool:
 def _is_runpod_pod_queue(queue_name: str) -> bool:
     """Return True if *queue_name* uses the ephemeral RunPod pod path."""
     try:
-        return get_queue_backend(queue_name) == "runpod-gpu"
+        return get_queue_endpoint_type(queue_name) == "runpod-pod"
     except Exception:
         return False
 

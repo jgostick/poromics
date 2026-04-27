@@ -101,6 +101,15 @@ def _normalize_queue_entry(raw_queue: Any) -> dict[str, Any]:
         raise QueueCatalogError(f"Queue '{queue_name}' must declare a non-empty analyses list.")
     analyses = [_as_non_empty_str(item, f"queues[{queue_name}].analyses") for item in analyses_raw]
 
+    _VALID_ENDPOINT_TYPES = frozenset({"local", "remote", "runpod-pod", "serverless"})
+    endpoint_type_raw = raw_queue.get("endpoint_type", "local")
+    endpoint_type = str(endpoint_type_raw).strip() if endpoint_type_raw else "local"
+    if endpoint_type not in _VALID_ENDPOINT_TYPES:
+        raise QueueCatalogError(
+            f"Queue '{queue_name}' has unknown endpoint_type '{endpoint_type}'. "
+            f"Valid values: {sorted(_VALID_ENDPOINT_TYPES)}"
+        )
+
     endpoint_raw = raw_queue.get("endpoint_url", "")
     endpoint_url = "" if endpoint_raw is None else str(endpoint_raw).strip()
     enabled = _as_bool(raw_queue.get("enabled"), f"queues[{queue_name}].enabled", default=True)
@@ -116,6 +125,7 @@ def _normalize_queue_entry(raw_queue: Any) -> dict[str, Any]:
         "name": queue_name,
         "display_name": display_name,
         "backend_key": backend_key,
+        "endpoint_type": endpoint_type,
         "compute_system": compute_system,
         "analyses": analyses,
         "endpoint_url": endpoint_url,
@@ -275,6 +285,12 @@ def queue_supports_analysis(queue_name: str, analysis_type: str) -> bool:
 def get_queue_backend(queue_name: str) -> str:
     queue = get_queue_config(queue_name)
     return str(queue.get("backend_key") or "default")
+
+
+def get_queue_endpoint_type(queue_name: str) -> str:
+    """Return the dispatch endpoint type for *queue_name* (e.g. 'local', 'remote', 'serverless', 'runpod-pod')."""
+    queue = get_queue_config(queue_name)
+    return str(queue.get("endpoint_type") or "local")
 
 
 def get_runpod_queue_choices() -> list[tuple[str, str]]:
