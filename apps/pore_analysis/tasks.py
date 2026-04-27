@@ -139,7 +139,8 @@ def _presigned_s3_url(file_field, expiry_seconds: int = 3600) -> str:
     )
 
 
-
+@shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 1})
+def run_permeability_job(self, job_id):
     job = AnalysisJob.objects.select_related("image").get(id=job_id)
 
     job.status = JobStatus.PROCESSING
