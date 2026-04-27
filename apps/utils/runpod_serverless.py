@@ -168,7 +168,27 @@ def poll_until_done(endpoint_id: str, job_id: str) -> dict:
     deadline = time.monotonic() + timeout
 
     while True:
-        status_data = poll_status(endpoint_id, job_id)
+        now = time.monotonic()
+        if now >= deadline:
+            log.warning("Timed out waiting for RunPod Serverless job %s; attempting cancel", job_id)
+            cancel_job(endpoint_id, job_id)
+            raise RunPodTransientError(
+                f"RunPod Serverless job {job_id} did not complete within {timeout:.0f}s."
+            )
+
+        try:
+            status_data = poll_status(endpoint_id, job_id)
+        except RunPodTransientError as exc:
+            # 5xx / network errors during cold-start or transient gateway issues —
+            # keep waiting rather than failing the job immediately.
+            log.warning(
+                "Transient error polling RunPod Serverless job %s (will retry): %s",
+                job_id,
+                exc,
+            )
+            time.sleep(min(poll_interval, max(0.0, deadline - time.monotonic())))
+            continue
+
         status = str(status_data.get("status") or "").upper()
 
         if status == "COMPLETED":
@@ -189,15 +209,7 @@ def poll_until_done(endpoint_id: str, job_id: str) -> dict:
                 f"RunPod Serverless job {job_id} ended with status {status}."
             )
 
-        now = time.monotonic()
-        if now >= deadline:
-            log.warning("Timed out waiting for RunPod Serverless job %s; attempting cancel", job_id)
-            cancel_job(endpoint_id, job_id)
-            raise RunPodTransientError(
-                f"RunPod Serverless job {job_id} did not complete within {timeout:.0f}s."
-            )
-
-        time.sleep(min(poll_interval, max(0.0, deadline - now)))
+        time.sleep(min(poll_interval, max(0.0, deadline - time.monotonic())))
 
 
 __all__ = [
